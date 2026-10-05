@@ -1,0 +1,8 @@
+bibentry(
+  bibtype = "Manual",
+  title   = "brapiR2: A Tidyverse-Native Client for BrAPI v2",
+  author  = person("Joash Joshua", "Ayo"),
+  year    = "2026",
+  url     = "https://docs.ropensci.org/brapiR2/",
+  note    = paste("R package version", meta$Version)
+)

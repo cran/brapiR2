@@ -1,0 +1,429 @@
+#' Internal: Build a BrAPI Request
+#'
+#' Constructs an httr2 request object with the correct base URL, path,
+#' authentication headers, and timeout.
+#'
+#' @inheritParams brapi_shared_params
+#' @param endpoint Character. The API endpoint path (e.g. "/programs").
+#'
+#' @return An httr2 request object.
+#' @keywords internal
+#' @noRd
+brapi_req <- function(con, endpoint) {
+  # Remove leading slash if present
+  endpoint <- sub("^/", "", endpoint)
+
+  req <- request(con$base_url) |>
+    req_url_path_append(con$path %||% "brapi", con$version, endpoint) |>
+    req_headers(
+      "Accept" = "application/json",
+      "User-Agent" = con$user_agent %||% brapi_user_agent()
+    ) |>
+    req_retry(max_tries = 3, backoff = ~2) |>
+    req_timeout(con$timeout %||% 120) |>
+    # Errors are raised by the caller instead, so the server's own
+    # message can be read out of the response body first.
+    req_error(is_error = function(resp) FALSE)
+
+  if (!is.null(con$token)) {
+    req <- req |> req_auth_bearer_token(con$token)
+  }
+
+  req
+}
+
+
+#' Call Any BrAPI GET Endpoint
+#'
+#' The named functions in brapiR2 cover 32 of the 36 BrAPI v2.1 entities.
+#' This is the layer beneath them, for endpoints brapiR2 does not wrap, for
+#' servers with non-standard extensions, and for query parameters a named
+#' function does not expose. Pagination, caching, authentication and error
+#' reporting work exactly as they do for the named functions.
+#'
+#' @section Return shape:
+#' The response passes through the same parser the named functions use, so
+#' a well-formed BrAPI collection returns one row per record. An endpoint
+#' returning something the parser does not recognise may come back with
+#' list-columns or a shape you need to reshape yourself. The named
+#' functions are the better choice wherever one exists.
+#'
+#' @inheritParams brapi_shared_params
+#' @param endpoint Character. The endpoint path, with or without a leading
+#'   slash (for example `"/programs"` or `"commoncropnames"`). The base
+#'   URL, BrAPI path and version come from `con`.
+#' @param query Named list. Query parameters to append to the URL.
+#'   `pageSize` defaults to the connection's page size; `page` is managed
+#'   by the pagination loop and should not be set here.
+#' @param max_pages Numeric. Stop after this many pages instead of
+#'   fetching all of them. `Inf`, the default, fetches everything. A
+#'   production server may hold hundreds of thousands of records, so a
+#'   small value is useful for looking at what an unfamiliar server holds.
+#'   A truncated result is never cached.
+#'
+#' @return A tibble of results, or an empty tibble if the endpoint
+#'   returned no data.
+#'
+#' @seealso [brapi_post_search()] for the POST search endpoints.
+#'
+#' @examples
+#' \donttest{
+#' con <- brapi_connection("https://test-server.brapi.org")
+#' if (brapi_ping(con)) {
+#'
+#'   # An endpoint brapiR2 does not wrap
+#'   brapi_get(con, "/commoncropnames")
+#'
+#'   # A query parameter no named function exposes
+#'   brapi_get(con, "/studies", query = list(active = "true"))
+#' }
+#' }
+#'
+#' @importFrom rlang hash
+#' @export
+brapi_get <- function(con, endpoint, query = list(), max_pages = Inf) {
+  validate_con(con)
+
+  query$pageSize <- query$pageSize %||% con$page_size
+  query$page <- 0L
+
+  cache_file <- brapi_cache_path(con, endpoint, query)
+  if (!is.null(cache_file)) {
+    cached <- brapi_cache_read(cache_file, con$cache$ttl, endpoint)
+    if (!is.null(cached)) {
+      return(cached)
+    }
+  }
+
+  pages <- brapi_get_pages(con, endpoint, query, max_pages)
+  if (pages$single) {
+    return(parse_brapi_result(pages$data))
+  }
+
+  all_data <- pages$data
+
+  # Use auto_unbox = TRUE so R scalars serialise as JSON scalars (not 1-element
+  # arrays).  R lists from simplifyVector = FALSE are never auto-unboxed, so
+  # true array fields remain arrays after the round-trip.
+  # A truncated result must never be cached: a later call would read it
+  # back as if it were the whole set.
+  cacheable <- !is.null(cache_file) && length(all_data) > 0L &&
+    is.infinite(max_pages)
+  if (cacheable) {
+    writeLines(toJSON(all_data, auto_unbox = TRUE), cache_file)
+  }
+
+  if (length(all_data) == 0L) {
+    return(tibble())
+  }
+
+  parse_brapi_result(all_data)
+}
+
+
+#' Internal: Build the Cache File Path for a Request
+#'
+#' Returns `NULL` if caching is not enabled on `con`. Otherwise builds a
+#' deterministic cache key from the URL and sorted query parameters
+#' (excluding `page`, since the key covers the full multi-page result).
+#'
+#' @inheritParams brapi_shared_params
+#' @param endpoint Character. The API endpoint.
+#' @param query Named list. Query parameters.
+#'
+#' @return A file path, or `NULL` if caching is not enabled.
+#' @keywords internal
+#' @noRd
+brapi_cache_path <- function(con, endpoint, query) {
+  if (is.null(con$cache)) {
+    return(NULL)
+  }
+
+  key_query <- query[setdiff(names(query), "page")]
+  key_str <- paste0(
+    con$base_url, "/", con$path %||% "brapi", "/", con$version, "/",
+    sub("^/", "", endpoint)
+  )
+  if (length(key_query) > 0L) {
+    q <- key_query[order(names(key_query))]
+    key_str <- paste0(
+      key_str, "?",
+      paste0(names(q), "=", vapply(q, as.character, character(1L)),
+        collapse = "&"
+      )
+    )
+  }
+  file.path(con$cache$dir, paste0(rlang::hash(key_str), ".json"))
+}
+
+
+#' Internal: Read a Cached Response if Still Fresh
+#'
+#' @param cache_file Character. Path to the cache file.
+#' @param ttl Numeric. Time-to-live in seconds.
+#' @param endpoint Character. The API endpoint (used in the status message).
+#'
+#' @return A parsed tibble, or `NULL` if there is no fresh cache entry.
+#' @keywords internal
+#' @noRd
+brapi_cache_read <- function(cache_file, ttl, endpoint) {
+  if (!file.exists(cache_file)) {
+    return(NULL)
+  }
+  age <- as.numeric(
+    difftime(Sys.time(), file.mtime(cache_file), units = "secs")
+  )
+  if (age > ttl) {
+    return(NULL)
+  }
+  cli_alert_info("Using cached response for {.path {endpoint}}.")
+  cached <- fromJSON(cache_file, simplifyVector = FALSE)
+  parse_brapi_result(cached)
+}
+
+
+#' Internal: Fetch All Pages of a GET Endpoint
+#'
+#' @inheritParams brapi_shared_params
+#' @param endpoint Character. The API endpoint.
+#' @param query Named list. Query parameters (the `page` element is
+#'   overwritten on each iteration).
+#'
+#' @return A list with elements `data` (the accumulated records, or a
+#'   single result object when `single` is `TRUE`) and `single` (logical;
+#'   `TRUE` for single-object endpoints with no `data` envelope).
+#' @keywords internal
+#' @noRd
+brapi_get_pages <- function(con, endpoint, query, max_pages = Inf) {
+  all_data <- list()
+  total_pages <- 1L
+  current_page <- 0L
+
+  repeat {
+    query$page <- current_page
+
+    resp <- brapi_req(con, endpoint) |>
+      req_url_query(!!!query) |>
+      req_perform()
+
+    brapi_stop_for_status(resp, con, endpoint)
+
+    body <- resp_body_json(resp, simplifyVector = FALSE)
+
+    pagination <- body$metadata$pagination
+    if (!is.null(pagination)) {
+      total_pages <- pagination$totalPages %||% 1L
+    }
+
+    data <- body$result$data %||% list()
+
+    # Single-object endpoint (no `data` envelope) — return immediately,
+    # no caching because there is nothing to paginate.
+    # A collection endpoint's `data` is a list of record objects. A
+    # single-object endpoint may itself carry a field called `data`
+    # (`/lists/{listDbId}` holds its members there, as bare strings), so
+    # treat `data` as the record envelope when it holds objects, or when
+    # it is the only field in `result` (`/commoncropnames` returns a bare
+    # list of crop names that way).
+    is_envelope <- !is.null(body$result$data) &&
+      (length(data) == 0L ||
+        all(vapply(data, is.list, logical(1))) ||
+        identical(names(body$result), "data"))
+    if (!is.null(body$result) && !is_envelope) {
+      return(list(data = list(body$result), single = TRUE))
+    }
+
+    if (length(data) > 0L) {
+      all_data <- c(all_data, data)
+    }
+
+    current_page <- current_page + 1L
+    if (current_page >= total_pages) break
+    if (current_page >= max_pages) {
+      cli_alert_info(paste(
+        "Stopped after {current_page} page{?s};",
+        "the server reports {total_pages}."
+      ))
+      break
+    }
+  }
+
+  list(data = all_data, single = FALSE)
+}
+
+
+#' Call Any BrAPI Search Endpoint
+#'
+#' The companion to [brapi_get()] for the POST `/search/{entity}`
+#' endpoints, which take a filter body rather than query parameters and
+#' may run asynchronously. Use it for search endpoints brapiR2 does not
+#' wrap, or for filter fields a named search function does not expose.
+#'
+#' @section Asynchronous searches:
+#' A server may answer immediately with the results, or with HTTP 202 and
+#' a `searchResultsDbId` to be polled until the results are ready. Both
+#' are handled here; the polling happens inside the call and you get the
+#' finished results either way.
+#'
+#' @section Return shape:
+#' As with [brapi_get()], the response passes through the same parser the
+#' named functions use. A well-formed BrAPI result returns one row per
+#' record; an unusual one may need reshaping yourself.
+#'
+#' @inheritParams brapi_shared_params
+#' @param endpoint Character. The search endpoint, with or without a
+#'   leading slash (for example `"/search/germplasm"`).
+#' @param body Named list. The search request body. Filter fields are sent
+#'   as JSON arrays, as BrAPI expects, even when you supply a single value.
+#' @param poll_interval Numeric. Seconds between polling attempts for an
+#'   asynchronous search. Default 2.
+#' @param max_polls Integer. Maximum polling attempts before giving up.
+#'   Default 30.
+#'
+#' @return A tibble of search results.
+#'
+#' @seealso [brapi_get()] for the GET endpoints.
+#'
+#' @examples
+#' \donttest{
+#' con <- brapi_connection("https://test-server.brapi.org")
+#' if (brapi_ping(con)) {
+#'   brapi_post_search(con, "/search/germplasm",
+#'                     body = list(germplasmNames = "Tomatillo Fantastico"))
+#' }
+#' }
+#'
+#' @export
+brapi_post_search <- function(con, endpoint, body = list(),
+                              poll_interval = 2, max_polls = 30L) {
+  validate_con(con)
+
+  body$pageSize <- body$pageSize %||% con$page_size
+
+  # BrAPI search bodies expect filter fields as JSON arrays, even when the
+  # caller supplies a single value.  Wrap every character vector with I() so
+  # jsonlite does not auto-unbox ["name"] → "name" (which causes HTTP 400).
+  body <- lapply(body, function(val) {
+    if (is.character(val)) I(val) else val
+  })
+
+  resp <- brapi_req(con, endpoint) |>
+    req_body_json(body) |>
+    req_method("POST") |>
+    req_perform()
+
+  brapi_stop_for_status(resp, con, endpoint)
+
+  status <- resp_status(resp)
+  resp_body <- resp_body_json(resp, simplifyVector = FALSE)
+
+  if (status == 202L || !is.null(resp_body$result$searchResultsDbId)) {
+    search_id <- resp_body$result$searchResultsDbId %||%
+      resp_body$searchResultsDbId
+
+    if (is.null(search_id)) {
+      cli_abort("Server returned 202 but no {.field searchResultsDbId}.")
+    }
+
+    return(brapi_poll_search(
+      con, endpoint, search_id, poll_interval, max_polls
+    ))
+  }
+
+  # Immediate 200 response
+  data <- resp_body$result$data %||% list()
+  if (length(data) == 0) {
+    return(tibble())
+  }
+  parse_brapi_result(data)
+}
+
+
+#' Internal: Poll an Async BrAPI Search Until Results Are Ready
+#'
+#' @inheritParams brapi_shared_params
+#' @param endpoint Character. The original search endpoint.
+#' @param search_id Character. The `searchResultsDbId` from the initial POST.
+#' @param poll_interval Numeric. Seconds between polling attempts.
+#' @param max_polls Integer. Maximum polling attempts before giving up.
+#'
+#' @return A tibble of search results.
+#' @keywords internal
+#' @noRd
+brapi_poll_search <- function(con, endpoint, search_id,
+                              poll_interval, max_polls) {
+  cli_alert_info("Async search started (ID: {search_id}). Polling...")
+
+  poll_endpoint <- paste0(endpoint, "/", search_id)
+  for (i in seq_len(max_polls)) {
+    Sys.sleep(poll_interval)
+
+    poll_resp <- brapi_req(con, poll_endpoint) |>
+      req_url_query(pageSize = con$page_size) |>
+      req_perform()
+
+    brapi_stop_for_status(poll_resp, con, poll_endpoint)
+
+    poll_status <- resp_status(poll_resp)
+    if (poll_status == 200L) {
+      poll_body <- resp_body_json(poll_resp, simplifyVector = FALSE)
+      data <- poll_body$result$data %||% list()
+      if (length(data) == 0) {
+        return(tibble())
+      }
+      return(parse_brapi_result(data))
+    }
+  }
+
+  cli_abort("Search timed out after {max_polls} attempts.")
+}
+
+
+#' Internal: Parse BrAPI Result List into a Tibble
+#'
+#' Takes a list of result objects (each a named list) and flattens
+#' them into a tibble. Nested lists are kept as list-columns.
+#'
+#' @param data A list of named lists (one per record).
+#'
+#' @return A tibble.
+#' @keywords internal
+#' @noRd
+parse_brapi_result <- function(data) {
+  if (length(data) == 0) {
+    return(tibble())
+  }
+
+  tryCatch(
+    {
+      rows <- map(data, function(record) {
+        record <- map(record, function(val) {
+          if (is.null(val)) {
+            return(NA)
+          }
+          if (is.list(val) && length(val) == 0) {
+            return(NA)
+          }
+          # Wrap lists and multi-element vectors as list-columns so
+          # as_tibble_row (which requires size-1 elements) doesn't error.
+          # Named lists have their keys sorted first: JSON object key order
+          # is not significant, and some servers vary it between records,
+          # which would otherwise make identical records compare as distinct.
+          if (is.list(val) || length(val) > 1L) {
+            if (is.list(val) && !is.null(names(val))) {
+              val <- val[order(names(val))]
+            }
+            return(list(val))
+          }
+          val
+        })
+        tibble::as_tibble_row(record, .name_repair = "minimal")
+      })
+      bind_rows(rows)
+    },
+    error = function(e) {
+      json_text <- toJSON(data, auto_unbox = TRUE)
+      as_tibble(fromJSON(json_text, flatten = TRUE))
+    }
+  )
+}

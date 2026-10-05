@@ -1,0 +1,889 @@
+<!DOCTYPE html>
+
+<html>
+
+<head>
+
+<meta charset="utf-8" />
+<meta name="generator" content="pandoc" />
+<meta http-equiv="X-UA-Compatible" content="IE=EDGE" />
+
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+
+
+
+<title>brapiR2</title>
+
+<script>// Pandoc 2.9 adds attributes on both header and div. We remove the former (to
+// be compatible with the behavior of Pandoc < 2.8).
+document.addEventListener('DOMContentLoaded', function(e) {
+  var hs = document.querySelectorAll("div.section[class*='level'] > :first-child");
+  var i, h, a;
+  for (i = 0; i < hs.length; i++) {
+    h = hs[i];
+    if (!/^h[1-6]$/i.test(h.tagName)) continue;  // it should be a header h1-h6
+    a = h.attributes;
+    while (a.length > 0) h.removeAttribute(a[0].name);
+  }
+});
+</script>
+
+<style type="text/css">
+code{white-space: pre-wrap;}
+span.smallcaps{font-variant: small-caps;}
+span.underline{text-decoration: underline;}
+div.column{display: inline-block; vertical-align: top; width: 50%;}
+div.hanging-indent{margin-left: 1.5em; text-indent: -1.5em;}
+ul.task-list{list-style: none;}
+</style>
+
+
+
+<style type="text/css">
+code {
+white-space: pre;
+}
+.sourceCode {
+overflow: visible;
+}
+</style>
+<style type="text/css" data-origin="pandoc">
+html { -webkit-text-size-adjust: 100%; }
+pre > code.sourceCode { white-space: pre; position: relative; }
+pre > code.sourceCode > span { display: inline-block; line-height: 1.25; }
+pre > code.sourceCode > span:empty { height: 1.2em; }
+.sourceCode { overflow: visible; }
+code.sourceCode > span { color: inherit; text-decoration: inherit; }
+div.sourceCode { margin: 1em 0; }
+pre.sourceCode { margin: 0; }
+@media screen {
+div.sourceCode { overflow: auto; }
+}
+@media print {
+pre > code.sourceCode { white-space: pre-wrap; }
+pre > code.sourceCode > span { text-indent: -5em; padding-left: 5em; }
+}
+pre.numberSource code
+{ counter-reset: source-line 0; }
+pre.numberSource code > span
+{ position: relative; left: -4em; counter-increment: source-line; }
+pre.numberSource code > span > a:first-child::before
+{ content: counter(source-line);
+position: relative; left: -1em; text-align: right; vertical-align: baseline;
+border: none; display: inline-block;
+-webkit-touch-callout: none; -webkit-user-select: none;
+-khtml-user-select: none; -moz-user-select: none;
+-ms-user-select: none; user-select: none;
+padding: 0 4px; width: 4em;
+color: #aaaaaa;
+}
+pre.numberSource { margin-left: 3em; border-left: 1px solid #aaaaaa; padding-left: 4px; }
+div.sourceCode
+{ }
+@media screen {
+pre > code.sourceCode > span > a:first-child::before { text-decoration: underline; }
+}
+code span.al { color: #ff0000; font-weight: bold; } 
+code span.an { color: #60a0b0; font-weight: bold; font-style: italic; } 
+code span.at { color: #7d9029; } 
+code span.bn { color: #40a070; } 
+code span.bu { color: #008000; } 
+code span.cf { color: #007020; font-weight: bold; } 
+code span.ch { color: #4070a0; } 
+code span.cn { color: #880000; } 
+code span.co { color: #60a0b0; font-style: italic; } 
+code span.cv { color: #60a0b0; font-weight: bold; font-style: italic; } 
+code span.do { color: #ba2121; font-style: italic; } 
+code span.dt { color: #902000; } 
+code span.dv { color: #40a070; } 
+code span.er { color: #ff0000; font-weight: bold; } 
+code span.ex { } 
+code span.fl { color: #40a070; } 
+code span.fu { color: #06287e; } 
+code span.im { color: #008000; font-weight: bold; } 
+code span.in { color: #60a0b0; font-weight: bold; font-style: italic; } 
+code span.kw { color: #007020; font-weight: bold; } 
+code span.op { color: #666666; } 
+code span.ot { color: #007020; } 
+code span.pp { color: #bc7a00; } 
+code span.sc { color: #4070a0; } 
+code span.ss { color: #bb6688; } 
+code span.st { color: #4070a0; } 
+code span.va { color: #19177c; } 
+code span.vs { color: #4070a0; } 
+code span.wa { color: #60a0b0; font-weight: bold; font-style: italic; } 
+</style>
+<script>
+// apply pandoc div.sourceCode style to pre.sourceCode instead
+(function() {
+  var sheets = document.styleSheets;
+  for (var i = 0; i < sheets.length; i++) {
+    if (sheets[i].ownerNode.dataset["origin"] !== "pandoc") continue;
+    try { var rules = sheets[i].cssRules; } catch (e) { continue; }
+    var j = 0;
+    while (j < rules.length) {
+      var rule = rules[j];
+      // check if there is a div.sourceCode rule
+      if (rule.type !== rule.STYLE_RULE || rule.selectorText !== "div.sourceCode") {
+        j++;
+        continue;
+      }
+      var style = rule.style.cssText;
+      // check if color or background-color is set
+      if (rule.style.color === '' && rule.style.backgroundColor === '') {
+        j++;
+        continue;
+      }
+      // replace div.sourceCode by a pre.sourceCode rule
+      sheets[i].deleteRule(j);
+      sheets[i].insertRule('pre.sourceCode{' + style + '}', j);
+    }
+  }
+})();
+</script>
+
+
+
+
+<style type="text/css">body {
+background-color: #fff;
+margin: 1em auto;
+max-width: 700px;
+overflow: visible;
+padding-left: 2em;
+padding-right: 2em;
+font-family: "Open Sans", "Helvetica Neue", Helvetica, Arial, sans-serif;
+font-size: 14px;
+line-height: 1.35;
+}
+#TOC {
+clear: both;
+margin: 0 0 10px 10px;
+padding: 4px;
+width: 400px;
+border: 1px solid #CCCCCC;
+border-radius: 5px;
+background-color: #f6f6f6;
+font-size: 13px;
+line-height: 1.3;
+}
+#TOC .toctitle {
+font-weight: bold;
+font-size: 15px;
+margin-left: 5px;
+}
+#TOC ul {
+padding-left: 40px;
+margin-left: -1.5em;
+margin-top: 5px;
+margin-bottom: 5px;
+}
+#TOC ul ul {
+margin-left: -2em;
+}
+#TOC li {
+line-height: 16px;
+}
+table {
+margin: 1em auto;
+border-width: 1px;
+border-color: #DDDDDD;
+border-style: outset;
+border-collapse: collapse;
+}
+table th {
+border-width: 2px;
+padding: 5px;
+border-style: inset;
+}
+table td {
+border-width: 1px;
+border-style: inset;
+line-height: 18px;
+padding: 5px 5px;
+}
+table, table th, table td {
+border-left-style: none;
+border-right-style: none;
+}
+table thead, table tr.even {
+background-color: #f7f7f7;
+}
+p {
+margin: 0.5em 0;
+}
+blockquote {
+background-color: #f6f6f6;
+padding: 0.25em 0.75em;
+}
+hr {
+border-style: solid;
+border: none;
+border-top: 1px solid #777;
+margin: 28px 0;
+}
+dl {
+margin-left: 0;
+}
+dl dd {
+margin-bottom: 13px;
+margin-left: 13px;
+}
+dl dt {
+font-weight: bold;
+}
+ul {
+margin-top: 0;
+}
+ul li {
+list-style: circle outside;
+}
+ul ul {
+margin-bottom: 0;
+}
+pre, code {
+background-color: #f7f7f7;
+border-radius: 3px;
+color: #333;
+white-space: pre-wrap; 
+}
+pre {
+border-radius: 3px;
+margin: 5px 0px 10px 0px;
+padding: 10px;
+}
+pre:not([class]) {
+background-color: #f7f7f7;
+}
+code {
+font-family: Consolas, Monaco, 'Courier New', monospace;
+font-size: 85%;
+}
+p > code, li > code {
+padding: 2px 0px;
+}
+div.figure {
+text-align: center;
+}
+img {
+background-color: #FFFFFF;
+padding: 2px;
+border: 1px solid #DDDDDD;
+border-radius: 3px;
+border: 1px solid #CCCCCC;
+margin: 0 5px;
+}
+h1 {
+margin-top: 0;
+font-size: 35px;
+line-height: 40px;
+}
+h2 {
+border-bottom: 4px solid #f7f7f7;
+padding-top: 10px;
+padding-bottom: 2px;
+font-size: 145%;
+}
+h3 {
+border-bottom: 2px solid #f7f7f7;
+padding-top: 10px;
+font-size: 120%;
+}
+h4 {
+border-bottom: 1px solid #f7f7f7;
+margin-left: 8px;
+font-size: 105%;
+}
+h5, h6 {
+border-bottom: 1px solid #ccc;
+font-size: 105%;
+}
+a {
+color: #0033dd;
+text-decoration: none;
+}
+a:hover {
+color: #6666ff; }
+a:visited {
+color: #800080; }
+a:visited:hover {
+color: #BB00BB; }
+a[href^="http:"] {
+text-decoration: underline; }
+a[href^="https:"] {
+text-decoration: underline; }
+
+code > span.kw { color: #555; font-weight: bold; } 
+code > span.dt { color: #902000; } 
+code > span.dv { color: #40a070; } 
+code > span.bn { color: #d14; } 
+code > span.fl { color: #d14; } 
+code > span.ch { color: #d14; } 
+code > span.st { color: #d14; } 
+code > span.co { color: #888888; font-style: italic; } 
+code > span.ot { color: #007020; } 
+code > span.al { color: #ff0000; font-weight: bold; } 
+code > span.fu { color: #900; font-weight: bold; } 
+code > span.er { color: #a61717; background-color: #e3d2d2; } 
+</style>
+
+
+
+
+</head>
+
+<body>
+
+
+
+
+<h1 class="title toc-ignore">brapiR2</h1>
+
+
+
+<p><strong>brapiR2</strong> provides pipe-friendly, stateless access to
+BrAPI v2 servers. Unlike stateful clients where you navigate by setting
+a “current” program or trial, brapiR2 functions are independent — you
+pass a connection object and get a tibble back. This makes them ideal
+for scripting, pipelines, and building downstream tools.</p>
+<div id="installation" class="section level2">
+<h2>Installation</h2>
+<p>brapiR2 is on rOpenSci’s R-universe, so
+<code>install.packages()</code> works once that repository is added.</p>
+<div class="sourceCode" id="cb1"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb1-1"><a href="#cb1-1" tabindex="-1"></a><span class="co"># Not run here: this would reinstall the package while building its own</span></span>
+<span id="cb1-2"><a href="#cb1-2" tabindex="-1"></a><span class="co"># documentation.</span></span>
+<span id="cb1-3"><a href="#cb1-3" tabindex="-1"></a><span class="fu">install.packages</span>(</span>
+<span id="cb1-4"><a href="#cb1-4" tabindex="-1"></a>  <span class="st">&quot;brapiR2&quot;</span>,</span>
+<span id="cb1-5"><a href="#cb1-5" tabindex="-1"></a>  <span class="at">repos =</span> <span class="fu">c</span>(<span class="st">&quot;https://ropensci.r-universe.dev&quot;</span>, <span class="st">&quot;https://cloud.r-project.org&quot;</span>)</span>
+<span id="cb1-6"><a href="#cb1-6" tabindex="-1"></a>)</span></code></pre></div>
+</div>
+<div id="connecting-to-a-server" class="section level2">
+<h2>Connecting to a Server</h2>
+<p>The examples below run live against the public BrAPI test server,
+which requires no authentication.</p>
+<div class="sourceCode" id="cb2"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb2-1"><a href="#cb2-1" tabindex="-1"></a><span class="fu">library</span>(brapiR2)</span>
+<span id="cb2-2"><a href="#cb2-2" tabindex="-1"></a></span>
+<span id="cb2-3"><a href="#cb2-3" tabindex="-1"></a>con <span class="ot">&lt;-</span> <span class="fu">brapi_connection</span>(<span class="st">&quot;https://test-server.brapi.org&quot;</span>)</span>
+<span id="cb2-4"><a href="#cb2-4" tabindex="-1"></a>con</span>
+<span id="cb2-5"><a href="#cb2-5" tabindex="-1"></a><span class="co">#&gt; </span></span>
+<span id="cb2-6"><a href="#cb2-6" tabindex="-1"></a><span class="co">#&gt; ── BrAPI Connection</span></span>
+<span id="cb2-7"><a href="#cb2-7" tabindex="-1"></a><span class="co">#&gt; • Server: &lt;https://test-server.brapi.org&gt;</span></span>
+<span id="cb2-8"><a href="#cb2-8" tabindex="-1"></a><span class="co">#&gt; • Version: v2</span></span>
+<span id="cb2-9"><a href="#cb2-9" tabindex="-1"></a><span class="co">#&gt; • Auth: ✗ no token</span></span>
+<span id="cb2-10"><a href="#cb2-10" tabindex="-1"></a><span class="co">#&gt; • Page size: 1000</span></span>
+<span id="cb2-11"><a href="#cb2-11" tabindex="-1"></a><span class="co">#&gt; • Timeout: 120s</span></span>
+<span id="cb2-12"><a href="#cb2-12" tabindex="-1"></a><span class="co">#&gt; • Cache: disabled</span></span></code></pre></div>
+<p>Every function takes <code>con</code> as its first argument. No
+global state is modified.</p>
+<p>Most real servers require credentials. See <a href="#authentication">Authentication</a> below for username/password
+login, OAuth 2.0, and bearer tokens, and <a href="#credential-handling">Handling Credentials Safely</a> for keeping
+them out of your scripts.</p>
+</div>
+<div id="exploring-programs-and-trials" class="section level2">
+<h2>Exploring Programs and Trials</h2>
+<p>BrAPI organises breeding data as a nesting of four levels, and the
+calls below walk down it. A <strong>program</strong> is a long-running
+breeding effort with a continuing objective, such as a maize program
+developing mid-altitude tropical hybrids; it persists across decades. A
+<strong>trial</strong> groups experiments that share a purpose within
+that program, typically one season’s worth of work, such as the 2022
+advanced yield trials. A <strong>study</strong> is a single trial grown
+at one location in one season, which is the level at which plots
+physically exist and measurements are actually taken. Below that sit
+<strong>observation units</strong>, the individual plots, plants or
+samples that carry the measurements themselves.</p>
+<p>You narrow from one level to the next because each level’s identifier
+is the filter for the one below it. In practice you rarely know a
+<code>studyDbId</code> up front; you know you want last season’s yield
+trials from a particular program, and you find your way down. Note that
+what a breeder calls an “environment” in a multi-environment analysis
+corresponds to a BrAPI study, not a location, since the same site in two
+seasons is two environments.</p>
+<div class="sourceCode" id="cb3"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb3-1"><a href="#cb3-1" tabindex="-1"></a><span class="fu">library</span>(dplyr)</span>
+<span id="cb3-2"><a href="#cb3-2" tabindex="-1"></a><span class="co">#&gt; </span></span>
+<span id="cb3-3"><a href="#cb3-3" tabindex="-1"></a><span class="co">#&gt; Attaching package: &#39;dplyr&#39;</span></span>
+<span id="cb3-4"><a href="#cb3-4" tabindex="-1"></a><span class="co">#&gt; The following objects are masked from &#39;package:stats&#39;:</span></span>
+<span id="cb3-5"><a href="#cb3-5" tabindex="-1"></a><span class="co">#&gt; </span></span>
+<span id="cb3-6"><a href="#cb3-6" tabindex="-1"></a><span class="co">#&gt;     filter, lag</span></span>
+<span id="cb3-7"><a href="#cb3-7" tabindex="-1"></a><span class="co">#&gt; The following objects are masked from &#39;package:base&#39;:</span></span>
+<span id="cb3-8"><a href="#cb3-8" tabindex="-1"></a><span class="co">#&gt; </span></span>
+<span id="cb3-9"><a href="#cb3-9" tabindex="-1"></a><span class="co">#&gt;     intersect, setdiff, setequal, union</span></span>
+<span id="cb3-10"><a href="#cb3-10" tabindex="-1"></a></span>
+<span id="cb3-11"><a href="#cb3-11" tabindex="-1"></a><span class="co"># List all breeding programs</span></span>
+<span id="cb3-12"><a href="#cb3-12" tabindex="-1"></a>programs <span class="ot">&lt;-</span> <span class="fu">brapi_programs</span>(con)</span>
+<span id="cb3-13"><a href="#cb3-13" tabindex="-1"></a>programs</span>
+<span id="cb3-14"><a href="#cb3-14" tabindex="-1"></a><span class="co">#&gt; # A tibble: 3 × 12</span></span>
+<span id="cb3-15"><a href="#cb3-15" tabindex="-1"></a><span class="co">#&gt;   additionalInfo externalReferences abbreviation commonCropName documentationURL</span></span>
+<span id="cb3-16"><a href="#cb3-16" tabindex="-1"></a><span class="co">#&gt;   &lt;list&gt;         &lt;list&gt;             &lt;chr&gt;        &lt;chr&gt;          &lt;chr&gt;           </span></span>
+<span id="cb3-17"><a href="#cb3-17" tabindex="-1"></a><span class="co">#&gt; 1 &lt;named list&gt;   &lt;list [1]&gt;         P1           Tomatillo      https://brapi.o…</span></span>
+<span id="cb3-18"><a href="#cb3-18" tabindex="-1"></a><span class="co">#&gt; 2 &lt;named list&gt;   &lt;list [1]&gt;         P2           Tomatillo      https://brapi.o…</span></span>
+<span id="cb3-19"><a href="#cb3-19" tabindex="-1"></a><span class="co">#&gt; 3 &lt;named list&gt;   &lt;list [1]&gt;         P3           Paw Paw        https://brapi.o…</span></span>
+<span id="cb3-20"><a href="#cb3-20" tabindex="-1"></a><span class="co">#&gt; # ℹ 7 more variables: leadPersonDbId &lt;chr&gt;, leadPersonName &lt;chr&gt;,</span></span>
+<span id="cb3-21"><a href="#cb3-21" tabindex="-1"></a><span class="co">#&gt; #   objective &lt;chr&gt;, programName &lt;chr&gt;, programType &lt;chr&gt;,</span></span>
+<span id="cb3-22"><a href="#cb3-22" tabindex="-1"></a><span class="co">#&gt; #   fundingInformation &lt;chr&gt;, programDbId &lt;chr&gt;</span></span>
+<span id="cb3-23"><a href="#cb3-23" tabindex="-1"></a></span>
+<span id="cb3-24"><a href="#cb3-24" tabindex="-1"></a><span class="co"># List trials in the first program</span></span>
+<span id="cb3-25"><a href="#cb3-25" tabindex="-1"></a>trials <span class="ot">&lt;-</span> <span class="fu">brapi_trials</span>(con, <span class="at">programDbId =</span> programs<span class="sc">$</span>programDbId[<span class="dv">1</span>])</span>
+<span id="cb3-26"><a href="#cb3-26" tabindex="-1"></a>trials</span>
+<span id="cb3-27"><a href="#cb3-27" tabindex="-1"></a><span class="co">#&gt; # A tibble: 1 × 16</span></span>
+<span id="cb3-28"><a href="#cb3-28" tabindex="-1"></a><span class="co">#&gt;   active additionalInfo   commonCropName contacts   datasetAuthorships</span></span>
+<span id="cb3-29"><a href="#cb3-29" tabindex="-1"></a><span class="co">#&gt;   &lt;lgl&gt;  &lt;list&gt;           &lt;chr&gt;          &lt;list&gt;     &lt;list&gt;            </span></span>
+<span id="cb3-30"><a href="#cb3-30" tabindex="-1"></a><span class="co">#&gt; 1 TRUE   &lt;named list [1]&gt; Tomatillo      &lt;list [1]&gt; &lt;list [1]&gt;        </span></span>
+<span id="cb3-31"><a href="#cb3-31" tabindex="-1"></a><span class="co">#&gt; # ℹ 11 more variables: documentationURL &lt;chr&gt;, endDate &lt;chr&gt;,</span></span>
+<span id="cb3-32"><a href="#cb3-32" tabindex="-1"></a><span class="co">#&gt; #   externalReferences &lt;list&gt;, programDbId &lt;chr&gt;, programName &lt;chr&gt;,</span></span>
+<span id="cb3-33"><a href="#cb3-33" tabindex="-1"></a><span class="co">#&gt; #   publications &lt;list&gt;, startDate &lt;chr&gt;, trialDescription &lt;chr&gt;,</span></span>
+<span id="cb3-34"><a href="#cb3-34" tabindex="-1"></a><span class="co">#&gt; #   trialName &lt;chr&gt;, trialPUI &lt;chr&gt;, trialDbId &lt;chr&gt;</span></span>
+<span id="cb3-35"><a href="#cb3-35" tabindex="-1"></a></span>
+<span id="cb3-36"><a href="#cb3-36" tabindex="-1"></a><span class="co"># List studies within that trial</span></span>
+<span id="cb3-37"><a href="#cb3-37" tabindex="-1"></a>studies <span class="ot">&lt;-</span> <span class="fu">brapi_studies</span>(con, <span class="at">trialDbId =</span> trials<span class="sc">$</span>trialDbId[<span class="dv">1</span>])</span>
+<span id="cb3-38"><a href="#cb3-38" tabindex="-1"></a>studies</span>
+<span id="cb3-39"><a href="#cb3-39" tabindex="-1"></a><span class="co">#&gt; # A tibble: 1 × 29</span></span>
+<span id="cb3-40"><a href="#cb3-40" tabindex="-1"></a><span class="co">#&gt;   additionalInfo   externalReferences active commonCropName contacts  </span></span>
+<span id="cb3-41"><a href="#cb3-41" tabindex="-1"></a><span class="co">#&gt;   &lt;list&gt;           &lt;list&gt;             &lt;lgl&gt;  &lt;chr&gt;          &lt;list&gt;    </span></span>
+<span id="cb3-42"><a href="#cb3-42" tabindex="-1"></a><span class="co">#&gt; 1 &lt;named list [1]&gt; &lt;list [1]&gt;         TRUE   Tomatillo      &lt;list [1]&gt;</span></span>
+<span id="cb3-43"><a href="#cb3-43" tabindex="-1"></a><span class="co">#&gt; # ℹ 24 more variables: culturalPractices &lt;chr&gt;, dataLinks &lt;list&gt;,</span></span>
+<span id="cb3-44"><a href="#cb3-44" tabindex="-1"></a><span class="co">#&gt; #   documentationURL &lt;chr&gt;, endDate &lt;chr&gt;, environmentParameters &lt;list&gt;,</span></span>
+<span id="cb3-45"><a href="#cb3-45" tabindex="-1"></a><span class="co">#&gt; #   experimentalDesign &lt;list&gt;, growthFacility &lt;list&gt;, lastUpdate &lt;list&gt;,</span></span>
+<span id="cb3-46"><a href="#cb3-46" tabindex="-1"></a><span class="co">#&gt; #   license &lt;chr&gt;, locationDbId &lt;chr&gt;, locationName &lt;chr&gt;,</span></span>
+<span id="cb3-47"><a href="#cb3-47" tabindex="-1"></a><span class="co">#&gt; #   observationLevels &lt;list&gt;, observationUnitsDescription &lt;chr&gt;,</span></span>
+<span id="cb3-48"><a href="#cb3-48" tabindex="-1"></a><span class="co">#&gt; #   seasons &lt;list&gt;, startDate &lt;chr&gt;, studyCode &lt;chr&gt;, studyDescription &lt;chr&gt;,</span></span>
+<span id="cb3-49"><a href="#cb3-49" tabindex="-1"></a><span class="co">#&gt; #   studyName &lt;chr&gt;, studyPUI &lt;chr&gt;, studyType &lt;chr&gt;, trialDbId &lt;chr&gt;, …</span></span></code></pre></div>
+</div>
+<div id="fetching-phenotypic-data" class="section level2">
+<h2>Fetching Phenotypic Data</h2>
+<p>The <code>/observations</code> endpoint returns data in long format,
+one row per measurement, with the trait identified in a column and the
+value in another. That is the right shape for transport and the wrong
+shape for analysis: nearly every R modelling function expects one row
+per experimental unit and one column per variable.</p>
+<p><code>brapi_study_data()</code> does that reshaping for you. It
+fetches the study’s observations, pivots traits into columns, and joins
+the germplasm and plot identifiers you need to link phenotypes back to
+genotypes or to a field layout. Doing this by hand is not difficult, but
+it is fiddly in ways that are easy to get subtly wrong, particularly
+when an observation unit carries more than one value for the same trait.
+Repeated measurements are kept as list-columns rather than silently
+averaged or dropped, which is why the summary below unnests before
+taking means. The function also falls back to fetching all observations
+and filtering client-side when a server does not honour the
+<code>studyDbId</code> filter, so it returns data on servers where a
+direct <code>brapi_observations()</code> call would come back empty.</p>
+<div class="sourceCode" id="cb4"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb4-1"><a href="#cb4-1" tabindex="-1"></a><span class="co"># Get analysis-ready wide format: one row per plot, one column per trait</span></span>
+<span id="cb4-2"><a href="#cb4-2" tabindex="-1"></a>data <span class="ot">&lt;-</span> <span class="fu">brapi_study_data</span>(con, studies<span class="sc">$</span>studyDbId[<span class="dv">1</span>])</span>
+<span id="cb4-3"><a href="#cb4-3" tabindex="-1"></a>data</span>
+<span id="cb4-4"><a href="#cb4-4" tabindex="-1"></a><span class="co">#&gt; # A tibble: 2 × 6</span></span>
+<span id="cb4-5"><a href="#cb4-5" tabindex="-1"></a><span class="co">#&gt;   observationUnitDbId observationUnitName germplasmDbId germplasmName  studyDbId</span></span>
+<span id="cb4-6"><a href="#cb4-6" tabindex="-1"></a><span class="co">#&gt;   &lt;chr&gt;               &lt;chr&gt;               &lt;chr&gt;         &lt;chr&gt;          &lt;chr&gt;    </span></span>
+<span id="cb4-7"><a href="#cb4-7" tabindex="-1"></a><span class="co">#&gt; 1 observation_unit1   Plot 1              germplasm1    Tomatillo Fan… study1   </span></span>
+<span id="cb4-8"><a href="#cb4-8" tabindex="-1"></a><span class="co">#&gt; 2 observation_unit2   Plot 2              germplasm2    Tomatillo Fan… study1   </span></span>
+<span id="cb4-9"><a href="#cb4-9" tabindex="-1"></a><span class="co">#&gt; # ℹ 1 more variable: `Corn Stalk Height` &lt;list&gt;</span></span></code></pre></div>
+<p>The public test server’s studies currently have no recorded
+observations, so <code>brapi_study_data()</code> returns an empty tibble
+and a warning rather than fabricated numbers — this is the function’s
+real, documented behaviour when a study has no data, not a bug in the
+example. Downstream code should check for this:</p>
+<div class="sourceCode" id="cb5"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb5-1"><a href="#cb5-1" tabindex="-1"></a><span class="cf">if</span> (<span class="fu">nrow</span>(data) <span class="sc">&gt;</span> <span class="dv">0</span>) {</span>
+<span id="cb5-2"><a href="#cb5-2" tabindex="-1"></a>  trait_cols <span class="ot">&lt;-</span> <span class="fu">setdiff</span>(</span>
+<span id="cb5-3"><a href="#cb5-3" tabindex="-1"></a>    <span class="fu">names</span>(data),</span>
+<span id="cb5-4"><a href="#cb5-4" tabindex="-1"></a>    <span class="fu">c</span>(</span>
+<span id="cb5-5"><a href="#cb5-5" tabindex="-1"></a>      <span class="st">&quot;observationUnitDbId&quot;</span>, <span class="st">&quot;observationUnitName&quot;</span>,</span>
+<span id="cb5-6"><a href="#cb5-6" tabindex="-1"></a>      <span class="st">&quot;germplasmDbId&quot;</span>, <span class="st">&quot;germplasmName&quot;</span>, <span class="st">&quot;studyDbId&quot;</span>, <span class="st">&quot;studyName&quot;</span></span>
+<span id="cb5-7"><a href="#cb5-7" tabindex="-1"></a>    )</span>
+<span id="cb5-8"><a href="#cb5-8" tabindex="-1"></a>  )</span>
+<span id="cb5-9"><a href="#cb5-9" tabindex="-1"></a>  <span class="co"># Some observation units have more than one recorded value for the same</span></span>
+<span id="cb5-10"><a href="#cb5-10" tabindex="-1"></a>  <span class="co"># trait (repeated measurements), which brapi_study_data() keeps as a</span></span>
+<span id="cb5-11"><a href="#cb5-11" tabindex="-1"></a>  <span class="co"># list-column. Unnest those into one row per observation before</span></span>
+<span id="cb5-12"><a href="#cb5-12" tabindex="-1"></a>  <span class="co"># summarising, so mean() sees plain numbers either way.</span></span>
+<span id="cb5-13"><a href="#cb5-13" tabindex="-1"></a>  data <span class="sc">|&gt;</span></span>
+<span id="cb5-14"><a href="#cb5-14" tabindex="-1"></a>    tidyr<span class="sc">::</span><span class="fu">unnest_longer</span>(dplyr<span class="sc">::</span><span class="fu">any_of</span>(trait_cols)) <span class="sc">|&gt;</span></span>
+<span id="cb5-15"><a href="#cb5-15" tabindex="-1"></a>    <span class="fu">mutate</span>(<span class="fu">across</span>(<span class="fu">all_of</span>(trait_cols), as.numeric)) <span class="sc">|&gt;</span></span>
+<span id="cb5-16"><a href="#cb5-16" tabindex="-1"></a>    <span class="fu">summarise</span>(<span class="fu">across</span>(<span class="fu">all_of</span>(trait_cols), \(x) <span class="fu">mean</span>(x, <span class="at">na.rm =</span> <span class="cn">TRUE</span>)))</span>
+<span id="cb5-17"><a href="#cb5-17" tabindex="-1"></a>} <span class="cf">else</span> {</span>
+<span id="cb5-18"><a href="#cb5-18" tabindex="-1"></a>  <span class="fu">cat</span>(<span class="st">&quot;No observations available for this study on the public test server.</span><span class="sc">\n</span><span class="st">&quot;</span>)</span>
+<span id="cb5-19"><a href="#cb5-19" tabindex="-1"></a>}</span>
+<span id="cb5-20"><a href="#cb5-20" tabindex="-1"></a><span class="co">#&gt; # A tibble: 1 × 1</span></span>
+<span id="cb5-21"><a href="#cb5-21" tabindex="-1"></a><span class="co">#&gt;   `Corn Stalk Height`</span></span>
+<span id="cb5-22"><a href="#cb5-22" tabindex="-1"></a><span class="co">#&gt;                 &lt;dbl&gt;</span></span>
+<span id="cb5-23"><a href="#cb5-23" tabindex="-1"></a><span class="co">#&gt; 1                  25</span></span></code></pre></div>
+</div>
+<div id="fetching-genotypic-data" class="section level2">
+<h2>Fetching Genotypic Data</h2>
+<p>A <strong>variant set</strong> is a genotyping dataset: a defined
+panel of markers scored on a defined set of samples, usually
+corresponding to one genotyping run or one platform. A server may hold
+several, and they will differ in marker density, in which individuals
+were scored, and often in reference genome build, so picking the right
+one matters.</p>
+<p>The dosage matrix is the form nearly every downstream analysis wants.
+Each cell counts how many copies of the alternate allele an individual
+carries at that marker, so for diploid maize the values are 0 for
+homozygous reference, 1 for heterozygous, 2 for homozygous alternate,
+and <code>NA</code> where the call failed. For polyploids the range
+extends to the ploidy level, which is why the function returns counts
+rather than a genotype string. Representing genotypes numerically this
+way is what allows them to enter a mixed model as a design matrix:
+additive marker effects are then simply regression coefficients on
+allele count.</p>
+<div class="sourceCode" id="cb6"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb6-1"><a href="#cb6-1" tabindex="-1"></a><span class="co"># List available variant sets (genotyping datasets)</span></span>
+<span id="cb6-2"><a href="#cb6-2" tabindex="-1"></a>vsets <span class="ot">&lt;-</span> <span class="fu">brapi_variant_sets</span>(con)</span>
+<span id="cb6-3"><a href="#cb6-3" tabindex="-1"></a>vsets</span>
+<span id="cb6-4"><a href="#cb6-4" tabindex="-1"></a><span class="co">#&gt; # A tibble: 1 × 11</span></span>
+<span id="cb6-5"><a href="#cb6-5" tabindex="-1"></a><span class="co">#&gt;   additionalInfo   externalReferences analysis   availableFormats callSetCount</span></span>
+<span id="cb6-6"><a href="#cb6-6" tabindex="-1"></a><span class="co">#&gt;   &lt;list&gt;           &lt;list&gt;             &lt;list&gt;     &lt;list&gt;                  &lt;int&gt;</span></span>
+<span id="cb6-7"><a href="#cb6-7" tabindex="-1"></a><span class="co">#&gt; 1 &lt;named list [1]&gt; &lt;list [1]&gt;         &lt;list [1]&gt; &lt;list [3]&gt;                 13</span></span>
+<span id="cb6-8"><a href="#cb6-8" tabindex="-1"></a><span class="co">#&gt; # ℹ 6 more variables: referenceSetDbId &lt;chr&gt;, studyDbId &lt;chr&gt;,</span></span>
+<span id="cb6-9"><a href="#cb6-9" tabindex="-1"></a><span class="co">#&gt; #   variantCount &lt;int&gt;, variantSetDbId &lt;chr&gt;, variantSetName &lt;chr&gt;,</span></span>
+<span id="cb6-10"><a href="#cb6-10" tabindex="-1"></a><span class="co">#&gt; #   metadataFields &lt;list&gt;</span></span>
+<span id="cb6-11"><a href="#cb6-11" tabindex="-1"></a></span>
+<span id="cb6-12"><a href="#cb6-12" tabindex="-1"></a>vs_id <span class="ot">&lt;-</span> vsets<span class="sc">$</span>variantSetDbId[<span class="dv">1</span>]</span></code></pre></div>
+<p><code>brapi_get_marker_map()</code> used to read a marker’s
+chromosome and position off <code>brapi_variants()</code>’s
+<code>referenceName</code>/<code>start</code> columns. On this server
+those come back <code>NA</code> for every variant — and per the BrAPI
+spec, that is legal: <code>Variant.start</code> and
+<code>Variant.referenceName</code> place a variant on a reference
+<em>assembly</em>, and the spec explicitly allows a server to leave them
+unset if it has no such assembly configured for that variant, rather
+than treating <code>NA</code> as an error condition.</p>
+<p>This server has simply chosen not to populate assembly coordinates on
+its variants. Positions for the same markers do exist, just under a
+different resource: the <strong>Genome Maps</strong> entity
+(<code>/maps</code>, <code>/markerpositions</code>) places a marker on a
+named <em>map</em> instead of a reference assembly — genetic (measured
+in cM) or physical (measured in bp), per the map’s own <code>type</code>
+and <code>unit</code> fields — and the same marker can appear on more
+than one map. <code>brapi_get_marker_map()</code> now reads from there
+instead:</p>
+<div class="sourceCode" id="cb7"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb7-1"><a href="#cb7-1" tabindex="-1"></a><span class="co"># Positions for every variant in the set, wherever they have been placed</span></span>
+<span id="cb7-2"><a href="#cb7-2" tabindex="-1"></a>markers <span class="ot">&lt;-</span> <span class="fu">brapi_get_marker_map</span>(con, <span class="at">variantSetDbId =</span> vs_id)</span>
+<span id="cb7-3"><a href="#cb7-3" tabindex="-1"></a><span class="co">#&gt; ℹ Async search started (ID: bfdd7866-2de3-4cc7-8a04-b93d1b8f00ee). Polling...</span></span>
+<span id="cb7-4"><a href="#cb7-4" tabindex="-1"></a><span class="co">#&gt; Warning: 14 of 20 variants in &quot;variantset1&quot; have no marker position record; returning</span></span>
+<span id="cb7-5"><a href="#cb7-5" tabindex="-1"></a><span class="co">#&gt; positions for the remaining 6.</span></span>
+<span id="cb7-6"><a href="#cb7-6" tabindex="-1"></a>markers</span>
+<span id="cb7-7"><a href="#cb7-7" tabindex="-1"></a><span class="co">#&gt; # A tibble: 6 × 8</span></span>
+<span id="cb7-8"><a href="#cb7-8" tabindex="-1"></a><span class="co">#&gt;   variantDbId variantName mapDbId  mapName type  unit  linkageGroupName position</span></span>
+<span id="cb7-9"><a href="#cb7-9" tabindex="-1"></a><span class="co">#&gt;   &lt;chr&gt;       &lt;chr&gt;       &lt;chr&gt;    &lt;chr&gt;   &lt;chr&gt; &lt;chr&gt; &lt;chr&gt;               &lt;int&gt;</span></span>
+<span id="cb7-10"><a href="#cb7-10" tabindex="-1"></a><span class="co">#&gt; 1 variant01   M1          genome_… Primar… Phys… cM    Chromosome 1          200</span></span>
+<span id="cb7-11"><a href="#cb7-11" tabindex="-1"></a><span class="co">#&gt; 2 variant02   M2          genome_… Primar… Phys… cM    Chromosome 1         4000</span></span>
+<span id="cb7-12"><a href="#cb7-12" tabindex="-1"></a><span class="co">#&gt; 3 variant03   M3          genome_… Primar… Phys… cM    Chromosome 1        60000</span></span>
+<span id="cb7-13"><a href="#cb7-13" tabindex="-1"></a><span class="co">#&gt; 4 variant04   M4          genome_… Primar… Phys… cM    Chromosome 2          200</span></span>
+<span id="cb7-14"><a href="#cb7-14" tabindex="-1"></a><span class="co">#&gt; 5 variant05   M5          genome_… Primar… Phys… cM    Chromosome 2         4000</span></span>
+<span id="cb7-15"><a href="#cb7-15" tabindex="-1"></a><span class="co">#&gt; 6 variant06   M6          genome_… Primar… Phys… cM    Chromosome 2        60000</span></span></code></pre></div>
+<p>Not every variant in a set is guaranteed to have a map placement. On
+this server, only some of the variant set’s variants have one — the
+warning above states the exact count rather than silently returning a
+shorter tibble. If you already know which map you care about, querying
+it directly skips the variant-set lookup and returns the same shape:</p>
+<div class="sourceCode" id="cb8"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb8-1"><a href="#cb8-1" tabindex="-1"></a>maps <span class="ot">&lt;-</span> <span class="fu">brapi_maps</span>(con)</span>
+<span id="cb8-2"><a href="#cb8-2" tabindex="-1"></a>maps[, <span class="fu">c</span>(<span class="st">&quot;mapDbId&quot;</span>, <span class="st">&quot;mapName&quot;</span>, <span class="st">&quot;type&quot;</span>, <span class="st">&quot;unit&quot;</span>)]</span>
+<span id="cb8-3"><a href="#cb8-3" tabindex="-1"></a><span class="co">#&gt; # A tibble: 2 × 4</span></span>
+<span id="cb8-4"><a href="#cb8-4" tabindex="-1"></a><span class="co">#&gt;   mapDbId     mapName             type         unit </span></span>
+<span id="cb8-5"><a href="#cb8-5" tabindex="-1"></a><span class="co">#&gt;   &lt;chr&gt;       &lt;chr&gt;               &lt;chr&gt;        &lt;chr&gt;</span></span>
+<span id="cb8-6"><a href="#cb8-6" tabindex="-1"></a><span class="co">#&gt; 1 genome_map1 Primary Paw Paw Map Physical Map cM   </span></span>
+<span id="cb8-7"><a href="#cb8-7" tabindex="-1"></a><span class="co">#&gt; 2 genome_map2 Primary Paw Paw Map Physical Map cM</span></span></code></pre></div>
+<p>Both maps on this test server declare a “Physical Map” type with a
+“cM” unit. That’s inconsistent fixture data on this particular server,
+not something brapiR2 or the BrAPI specification produces. On a real
+server the two fields agree.</p>
+<div class="sourceCode" id="cb9"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb9-1"><a href="#cb9-1" tabindex="-1"></a><span class="fu">brapi_get_marker_map</span>(con, <span class="at">mapDbId =</span> maps<span class="sc">$</span>mapDbId[<span class="dv">1</span>])</span>
+<span id="cb9-2"><a href="#cb9-2" tabindex="-1"></a><span class="co">#&gt; # A tibble: 3 × 8</span></span>
+<span id="cb9-3"><a href="#cb9-3" tabindex="-1"></a><span class="co">#&gt;   variantDbId variantName mapDbId  mapName type  unit  linkageGroupName position</span></span>
+<span id="cb9-4"><a href="#cb9-4" tabindex="-1"></a><span class="co">#&gt;   &lt;chr&gt;       &lt;chr&gt;       &lt;chr&gt;    &lt;chr&gt;   &lt;chr&gt; &lt;chr&gt; &lt;chr&gt;               &lt;int&gt;</span></span>
+<span id="cb9-5"><a href="#cb9-5" tabindex="-1"></a><span class="co">#&gt; 1 variant01   M1          genome_… Primar… Phys… cM    Chromosome 1          200</span></span>
+<span id="cb9-6"><a href="#cb9-6" tabindex="-1"></a><span class="co">#&gt; 2 variant02   M2          genome_… Primar… Phys… cM    Chromosome 1         4000</span></span>
+<span id="cb9-7"><a href="#cb9-7" tabindex="-1"></a><span class="co">#&gt; 3 variant03   M3          genome_… Primar… Phys… cM    Chromosome 1        60000</span></span></code></pre></div>
+<div class="sourceCode" id="cb10"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb10-1"><a href="#cb10-1" tabindex="-1"></a><span class="co"># Get dosage matrix for genomic selection (samples x markers, values 0/1/2)</span></span>
+<span id="cb10-2"><a href="#cb10-2" tabindex="-1"></a>dosage <span class="ot">&lt;-</span> <span class="fu">brapi_get_dosage_matrix</span>(con, vs_id)</span>
+<span id="cb10-3"><a href="#cb10-3" tabindex="-1"></a><span class="co">#&gt; ℹ Fetching allele matrix for variant set &quot;variantset1&quot;...</span></span>
+<span id="cb10-4"><a href="#cb10-4" tabindex="-1"></a><span class="co">#&gt; ℹ Encoding 260 genotype calls as allele dosages...</span></span>
+<span id="cb10-5"><a href="#cb10-5" tabindex="-1"></a><span class="co">#&gt; ✔ Dosage matrix ready: 13 samples x 20 markers.</span></span>
+<span id="cb10-6"><a href="#cb10-6" tabindex="-1"></a><span class="fu">dim</span>(dosage)</span>
+<span id="cb10-7"><a href="#cb10-7" tabindex="-1"></a><span class="co">#&gt; [1] 13 20</span></span>
+<span id="cb10-8"><a href="#cb10-8" tabindex="-1"></a>dosage[<span class="fu">seq_len</span>(<span class="fu">min</span>(<span class="dv">3</span>, <span class="fu">nrow</span>(dosage))), <span class="fu">seq_len</span>(<span class="fu">min</span>(<span class="dv">5</span>, <span class="fu">ncol</span>(dosage)))]</span>
+<span id="cb10-9"><a href="#cb10-9" tabindex="-1"></a><span class="co">#&gt;           variant01 variant02 variant03 variant04 variant05</span></span>
+<span id="cb10-10"><a href="#cb10-10" tabindex="-1"></a><span class="co">#&gt; callset01         0         0         0         0         0</span></span>
+<span id="cb10-11"><a href="#cb10-11" tabindex="-1"></a><span class="co">#&gt; callset02         1         0        NA        NA        NA</span></span>
+<span id="cb10-12"><a href="#cb10-12" tabindex="-1"></a><span class="co">#&gt; callset03         1         0         1         1         0</span></span></code></pre></div>
+</div>
+<div id="authentication" class="section level2">
+<h2>Authentication</h2>
+<p>Most production BrAPI servers require authentication. These calls
+need your own server and credentials, so they are shown but not run
+here.</p>
+<div class="sourceCode" id="cb11"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb11-1"><a href="#cb11-1" tabindex="-1"></a><span class="co"># Username/password login - used by Breedbase, BMS, and Germinate</span></span>
+<span id="cb11-2"><a href="#cb11-2" tabindex="-1"></a>con <span class="ot">&lt;-</span> <span class="fu">brapi_connection</span>(<span class="st">&quot;https://my-breedbase.org&quot;</span>)</span>
+<span id="cb11-3"><a href="#cb11-3" tabindex="-1"></a>con <span class="ot">&lt;-</span> <span class="fu">brapi_login</span>(con, <span class="st">&quot;username&quot;</span>, <span class="st">&quot;password&quot;</span>)</span>
+<span id="cb11-4"><a href="#cb11-4" tabindex="-1"></a></span>
+<span id="cb11-5"><a href="#cb11-5" tabindex="-1"></a><span class="co"># OAuth 2.0 (EBS and similar)</span></span>
+<span id="cb11-6"><a href="#cb11-6" tabindex="-1"></a>con <span class="ot">&lt;-</span> <span class="fu">brapi_login_oauth2</span>(</span>
+<span id="cb11-7"><a href="#cb11-7" tabindex="-1"></a>  con,</span>
+<span id="cb11-8"><a href="#cb11-8" tabindex="-1"></a>  <span class="at">client_id     =</span> <span class="st">&quot;my_id&quot;</span>,</span>
+<span id="cb11-9"><a href="#cb11-9" tabindex="-1"></a>  <span class="at">client_secret =</span> <span class="st">&quot;my_secret&quot;</span>,</span>
+<span id="cb11-10"><a href="#cb11-10" tabindex="-1"></a>  <span class="at">authorize_url =</span> <span class="st">&quot;https://auth.example.org/authorize&quot;</span>,</span>
+<span id="cb11-11"><a href="#cb11-11" tabindex="-1"></a>  <span class="at">access_url    =</span> <span class="st">&quot;https://auth.example.org/token&quot;</span></span>
+<span id="cb11-12"><a href="#cb11-12" tabindex="-1"></a>)</span>
+<span id="cb11-13"><a href="#cb11-13" tabindex="-1"></a></span>
+<span id="cb11-14"><a href="#cb11-14" tabindex="-1"></a><span class="co"># Bearer token (GIGWA, custom servers)</span></span>
+<span id="cb11-15"><a href="#cb11-15" tabindex="-1"></a>con <span class="ot">&lt;-</span> <span class="fu">brapi_set_token</span>(con, <span class="fu">Sys.getenv</span>(<span class="st">&quot;BRAPI_TOKEN&quot;</span>))</span></code></pre></div>
+<div id="credential-handling" class="section level3">
+<h3>Handling Credentials Safely</h3>
+<p>The example above reads a token from an environment variable rather
+than writing it as a literal string, and that’s deliberate: a password
+or token typed directly into a script gets committed to version control
+the moment someone runs <code>git add</code>, and stays in the project’s
+history even after it’s “removed” in a later commit. There are two safer
+places to keep it.</p>
+<p><strong><code>.Renviron</code> and
+<code>Sys.getenv()</code>.</strong> For scripts you run yourself, put
+credentials in a <code>.Renviron</code> file (in your home directory for
+all projects, or in the project directory for that project only) as
+<code>NAME=value</code> pairs, one per line:</p>
+<pre><code>BRAPI_TOKEN=abc123...
+BRAPI_PASSWORD=my_password</code></pre>
+<p>R reads <code>.Renviron</code> automatically at startup, so after
+restarting your R session the values are available via
+<code>Sys.getenv()</code>:</p>
+<div class="sourceCode" id="cb13"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb13-1"><a href="#cb13-1" tabindex="-1"></a>con <span class="ot">&lt;-</span> <span class="fu">brapi_connection</span>(<span class="st">&quot;https://my-breedbase.org&quot;</span>)</span>
+<span id="cb13-2"><a href="#cb13-2" tabindex="-1"></a>con <span class="ot">&lt;-</span> <span class="fu">brapi_login</span>(</span>
+<span id="cb13-3"><a href="#cb13-3" tabindex="-1"></a>  con, <span class="fu">Sys.getenv</span>(<span class="st">&quot;BRAPI_USERNAME&quot;</span>), <span class="fu">Sys.getenv</span>(<span class="st">&quot;BRAPI_PASSWORD&quot;</span>)</span>
+<span id="cb13-4"><a href="#cb13-4" tabindex="-1"></a>)</span></code></pre></div>
+<p>Add <code>.Renviron</code> to <code>.gitignore</code> so it never
+gets committed. <code>usethis::edit_r_environ()</code> opens the right
+file for you.</p>
+<p><strong>The keyring package.</strong> For credentials you want stored
+in your operating system’s own credential manager (Keychain on macOS,
+Credential Manager on Windows, Secret Service on Linux) rather than in a
+plaintext file, use <a href="https://cran.r-project.org/package=keyring">keyring</a>.
+<code>key_set()</code> prompts interactively for a secret and stores it;
+<code>key_get()</code> retrieves it later, in this session or a future
+one, without the value ever appearing in your script or your R
+history:</p>
+<div class="sourceCode" id="cb14"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb14-1"><a href="#cb14-1" tabindex="-1"></a><span class="co"># Run once, interactively - prompts for the password and stores it</span></span>
+<span id="cb14-2"><a href="#cb14-2" tabindex="-1"></a>keyring<span class="sc">::</span><span class="fu">key_set</span>(<span class="st">&quot;brapiR2_my-breedbase&quot;</span>, <span class="at">username =</span> <span class="st">&quot;my_username&quot;</span>)</span>
+<span id="cb14-3"><a href="#cb14-3" tabindex="-1"></a></span>
+<span id="cb14-4"><a href="#cb14-4" tabindex="-1"></a><span class="co"># In scripts, from then on:</span></span>
+<span id="cb14-5"><a href="#cb14-5" tabindex="-1"></a>con <span class="ot">&lt;-</span> <span class="fu">brapi_connection</span>(<span class="st">&quot;https://my-breedbase.org&quot;</span>)</span>
+<span id="cb14-6"><a href="#cb14-6" tabindex="-1"></a>con <span class="ot">&lt;-</span> <span class="fu">brapi_login</span>(</span>
+<span id="cb14-7"><a href="#cb14-7" tabindex="-1"></a>  con,</span>
+<span id="cb14-8"><a href="#cb14-8" tabindex="-1"></a>  <span class="at">username =</span> <span class="st">&quot;my_username&quot;</span>,</span>
+<span id="cb14-9"><a href="#cb14-9" tabindex="-1"></a>  <span class="at">password =</span> keyring<span class="sc">::</span><span class="fu">key_get</span>(<span class="st">&quot;brapiR2_my-breedbase&quot;</span>, <span class="at">username =</span> <span class="st">&quot;my_username&quot;</span>)</span>
+<span id="cb14-10"><a href="#cb14-10" tabindex="-1"></a>)</span></code></pre></div>
+<p>Either approach keeps the secret out of the script itself, out of
+shell history, and out of anything you might <code>git commit</code> or
+share.</p>
+<p><strong>The token lives in the connection object.</strong> Once you
+have authenticated, the credential is held inside <code>con</code> and
+goes wherever <code>con</code> goes:
+<code>saveRDS(con, &quot;con.rds&quot;)</code> writes it to disk in plain text,
+and <code>str(con)</code> or <code>unclass(con)</code> prints it in
+full. <code>print(con)</code> shows only whether the connection is
+authenticated, never the token itself, so that is what to paste when
+sharing a session or reporting a problem.</p>
+</div>
+</div>
+<div id="caching-and-parallel-fetching" class="section level2">
+<h2>Caching and Parallel Fetching</h2>
+<p>Two features for when you are fetching the same data repeatedly, or a
+lot of it at once. Both run against the public test server here; neither
+needs authentication.</p>
+<p><strong>Caching</strong> stores each response on disk under a key
+built from the URL and query parameters, and returns it without a
+network call for as long as the TTL lasts. Reach for it when you are
+developing a script against a slow or distant server and re-running the
+same calls, or when a knitted report would otherwise hit the server once
+per render. It is off by default, per connection, and never shared
+between connections.</p>
+<div class="sourceCode" id="cb15"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb15-1"><a href="#cb15-1" tabindex="-1"></a><span class="co"># Enable caching — repeated calls within the TTL return instantly</span></span>
+<span id="cb15-2"><a href="#cb15-2" tabindex="-1"></a>cache_dir <span class="ot">&lt;-</span> <span class="fu">tempfile</span>(<span class="st">&quot;brapi_cache_&quot;</span>)</span>
+<span id="cb15-3"><a href="#cb15-3" tabindex="-1"></a><span class="fu">dir.create</span>(cache_dir)</span>
+<span id="cb15-4"><a href="#cb15-4" tabindex="-1"></a>perf_con <span class="ot">&lt;-</span> <span class="fu">brapi_cache_enable</span>(con, <span class="at">ttl =</span> <span class="dv">3600</span>, <span class="at">dir =</span> cache_dir)</span>
+<span id="cb15-5"><a href="#cb15-5" tabindex="-1"></a><span class="co">#&gt; ✔ Caching enabled at &#39;C:\Users\Joshua\AppData\Local\Temp\RtmpAZ0xDE\brapi_cache_9dcf16612&#39; (TTL: 3600s)</span></span>
+<span id="cb15-6"><a href="#cb15-6" tabindex="-1"></a></span>
+<span id="cb15-7"><a href="#cb15-7" tabindex="-1"></a><span class="co"># First call: hits the server</span></span>
+<span id="cb15-8"><a href="#cb15-8" tabindex="-1"></a><span class="fu">invisible</span>(<span class="fu">brapi_programs</span>(perf_con))</span>
+<span id="cb15-9"><a href="#cb15-9" tabindex="-1"></a></span>
+<span id="cb15-10"><a href="#cb15-10" tabindex="-1"></a><span class="co"># Second call: reads from disk (sub-millisecond)</span></span>
+<span id="cb15-11"><a href="#cb15-11" tabindex="-1"></a><span class="fu">brapi_programs</span>(perf_con)</span>
+<span id="cb15-12"><a href="#cb15-12" tabindex="-1"></a><span class="co">#&gt; ℹ Using cached response for &#39;/programs&#39;.</span></span>
+<span id="cb15-13"><a href="#cb15-13" tabindex="-1"></a><span class="co">#&gt; # A tibble: 3 × 12</span></span>
+<span id="cb15-14"><a href="#cb15-14" tabindex="-1"></a><span class="co">#&gt;   additionalInfo externalReferences abbreviation commonCropName documentationURL</span></span>
+<span id="cb15-15"><a href="#cb15-15" tabindex="-1"></a><span class="co">#&gt;   &lt;list&gt;         &lt;list&gt;             &lt;chr&gt;        &lt;chr&gt;          &lt;chr&gt;           </span></span>
+<span id="cb15-16"><a href="#cb15-16" tabindex="-1"></a><span class="co">#&gt; 1 &lt;named list&gt;   &lt;list [1]&gt;         P1           Tomatillo      https://brapi.o…</span></span>
+<span id="cb15-17"><a href="#cb15-17" tabindex="-1"></a><span class="co">#&gt; 2 &lt;named list&gt;   &lt;list [1]&gt;         P2           Tomatillo      https://brapi.o…</span></span>
+<span id="cb15-18"><a href="#cb15-18" tabindex="-1"></a><span class="co">#&gt; 3 &lt;named list&gt;   &lt;list [1]&gt;         P3           Paw Paw        https://brapi.o…</span></span>
+<span id="cb15-19"><a href="#cb15-19" tabindex="-1"></a><span class="co">#&gt; # ℹ 7 more variables: leadPersonDbId &lt;chr&gt;, leadPersonName &lt;chr&gt;,</span></span>
+<span id="cb15-20"><a href="#cb15-20" tabindex="-1"></a><span class="co">#&gt; #   objective &lt;chr&gt;, programName &lt;chr&gt;, programType &lt;chr&gt;,</span></span>
+<span id="cb15-21"><a href="#cb15-21" tabindex="-1"></a><span class="co">#&gt; #   fundingInformation &lt;chr&gt;, programDbId &lt;chr&gt;</span></span>
+<span id="cb15-22"><a href="#cb15-22" tabindex="-1"></a></span>
+<span id="cb15-23"><a href="#cb15-23" tabindex="-1"></a><span class="co"># Clear all cached files</span></span>
+<span id="cb15-24"><a href="#cb15-24" tabindex="-1"></a><span class="fu">brapi_cache_clear</span>(perf_con)</span>
+<span id="cb15-25"><a href="#cb15-25" tabindex="-1"></a><span class="co">#&gt; ✔ Cleared 1 cached response(s).</span></span></code></pre></div>
+<p><strong>Parallel fetching</strong> runs one call across many
+identifiers at once, which helps when you are pulling data for dozens of
+studies or germplasm and each request is slow.
+<code>brapi_fetch_parallel()</code> uses whatever <code>future</code>
+plan is already active — sequential unless you say otherwise — so
+choosing the backend, and shutting it down afterwards, is yours to do.
+See <a href="https://future.futureverse.org/"><code>future</code>’s own
+documentation</a> for the available backends, and DESIGN.md for why the
+package does not set one for you:</p>
+<div class="sourceCode" id="cb16"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb16-1"><a href="#cb16-1" tabindex="-1"></a>future<span class="sc">::</span><span class="fu">plan</span>(future<span class="sc">::</span>multisession, <span class="at">workers =</span> <span class="dv">2</span>)</span>
+<span id="cb16-2"><a href="#cb16-2" tabindex="-1"></a></span>
+<span id="cb16-3"><a href="#cb16-3" tabindex="-1"></a><span class="co"># Fetch study data from multiple studies in parallel (all studies on the</span></span>
+<span id="cb16-4"><a href="#cb16-4" tabindex="-1"></a><span class="co"># server, not just the one attached to the trial filtered above)</span></span>
+<span id="cb16-5"><a href="#cb16-5" tabindex="-1"></a>study_ids <span class="ot">&lt;-</span> <span class="fu">brapi_studies</span>(con)<span class="sc">$</span>studyDbId</span>
+<span id="cb16-6"><a href="#cb16-6" tabindex="-1"></a>all_data <span class="ot">&lt;-</span> <span class="fu">brapi_fetch_parallel</span>(perf_con, brapi_study_data, study_ids)</span>
+<span id="cb16-7"><a href="#cb16-7" tabindex="-1"></a><span class="co">#&gt; ℹ Fetching 3 items...</span></span>
+<span id="cb16-8"><a href="#cb16-8" tabindex="-1"></a><span class="co">#&gt; ℹ Using cached response for &#39;/observations&#39;.</span></span>
+<span id="cb16-9"><a href="#cb16-9" tabindex="-1"></a><span class="co">#&gt; ! No observations found for study &quot;study2&quot;.</span></span>
+<span id="cb16-10"><a href="#cb16-10" tabindex="-1"></a><span class="co">#&gt; ℹ Using cached response for &#39;/observations&#39;.</span></span>
+<span id="cb16-11"><a href="#cb16-11" tabindex="-1"></a><span class="co">#&gt; ! No observations found for study &quot;study3&quot;.</span></span>
+<span id="cb16-12"><a href="#cb16-12" tabindex="-1"></a><span class="co">#&gt; ✔ Fetched 2 rows from 3 sources.</span></span>
+<span id="cb16-13"><a href="#cb16-13" tabindex="-1"></a>all_data</span>
+<span id="cb16-14"><a href="#cb16-14" tabindex="-1"></a><span class="co">#&gt; # A tibble: 2 × 6</span></span>
+<span id="cb16-15"><a href="#cb16-15" tabindex="-1"></a><span class="co">#&gt;   observationUnitDbId observationUnitName germplasmDbId germplasmName  studyDbId</span></span>
+<span id="cb16-16"><a href="#cb16-16" tabindex="-1"></a><span class="co">#&gt;   &lt;chr&gt;               &lt;chr&gt;               &lt;chr&gt;         &lt;chr&gt;          &lt;chr&gt;    </span></span>
+<span id="cb16-17"><a href="#cb16-17" tabindex="-1"></a><span class="co">#&gt; 1 observation_unit1   Plot 1              germplasm1    Tomatillo Fan… study1   </span></span>
+<span id="cb16-18"><a href="#cb16-18" tabindex="-1"></a><span class="co">#&gt; 2 observation_unit2   Plot 2              germplasm2    Tomatillo Fan… study1   </span></span>
+<span id="cb16-19"><a href="#cb16-19" tabindex="-1"></a><span class="co">#&gt; # ℹ 1 more variable: `Corn Stalk Height` &lt;list&gt;</span></span></code></pre></div>
+<p>As above, this server’s studies have no observations, so
+<code>all_data</code> is an empty tibble here too — the call itself, and
+the parallel-fetch mechanics, are real.</p>
+<p>Since you set the plan, shutting the workers back down when you’re
+done with them is your responsibility too, not something the package
+does for you on exit:</p>
+<div class="sourceCode" id="cb17"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb17-1"><a href="#cb17-1" tabindex="-1"></a>future<span class="sc">::</span><span class="fu">plan</span>(future<span class="sc">::</span>sequential)</span></code></pre></div>
+<hr />
+</div>
+<div id="comparison-with-qbms" class="section level2">
+<h2>Comparison with QBMS</h2>
+<p><a href="https://cran.r-project.org/package=QBMS">QBMS</a> is a
+well-established R package for BrAPI access that has been widely adopted
+in the breeding community. brapiR2 and QBMS are <strong>complementary
+tools designed for different workflows</strong>.</p>
+<table>
+<colgroup>
+<col width="37%" />
+<col width="25%" />
+<col width="37%" />
+</colgroup>
+<thead>
+<tr class="header">
+<th>Feature</th>
+<th>QBMS</th>
+<th>brapiR2</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>Style</td>
+<td>Stateful (set program → set trial → set study)</td>
+<td>Stateless (pass <code>con</code> everywhere)</td>
+</tr>
+<tr class="even">
+<td>Returns</td>
+<td>Data frames</td>
+<td>Tibbles (tidy, list-columns for nested data)</td>
+</tr>
+<tr class="odd">
+<td>Pipe-friendly</td>
+<td>Partial</td>
+<td>Yes, all functions follow <code>f(con, ...)</code></td>
+</tr>
+<tr class="even">
+<td>Caching</td>
+<td>No</td>
+<td>Yes, disk-based with TTL</td>
+</tr>
+<tr class="odd">
+<td>Parallel fetch</td>
+<td>No</td>
+<td>Via the caller’s own <code>future</code> backend</td>
+</tr>
+<tr class="even">
+<td>Genotyping</td>
+<td>Limited</td>
+<td>Allele matrix, dosage matrix, marker map (32/37 BrAPI entities
+covered overall, read-only)</td>
+</tr>
+<tr class="odd">
+<td>Authentication</td>
+<td>Yes</td>
+<td>Yes</td>
+</tr>
+</tbody>
+</table>
+<p>brapiR2 targets BrAPI v2 only, by design - see the “Design History”
+section of <a href="https://github.com/ropensci/brapiR2/blob/main/DESIGN.md">DESIGN.md</a>
+for why. QBMS’s own BrAPI version support is a separate question from
+this comparison; check QBMS’s own documentation for its current v1/v2
+coverage rather than relying on a claim made here.</p>
+<div id="same-workflow-different-style" class="section level3">
+<h3>Same workflow, different style</h3>
+<p>The examples below use a private Breedbase-style server and
+credentials, so they are illustrative only.</p>
+<p><strong>QBMS</strong> — navigational, stateful:</p>
+<div class="sourceCode" id="cb18"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb18-1"><a href="#cb18-1" tabindex="-1"></a><span class="fu">library</span>(QBMS)</span>
+<span id="cb18-2"><a href="#cb18-2" tabindex="-1"></a></span>
+<span id="cb18-3"><a href="#cb18-3" tabindex="-1"></a><span class="fu">set_crop</span>(<span class="st">&quot;Wheat&quot;</span>)</span>
+<span id="cb18-4"><a href="#cb18-4" tabindex="-1"></a><span class="fu">login_bms</span>(<span class="st">&quot;https://my-bms.org&quot;</span>, <span class="st">&quot;user&quot;</span>, <span class="st">&quot;pass&quot;</span>)</span>
+<span id="cb18-5"><a href="#cb18-5" tabindex="-1"></a></span>
+<span id="cb18-6"><a href="#cb18-6" tabindex="-1"></a><span class="fu">list_programs</span>()</span>
+<span id="cb18-7"><a href="#cb18-7" tabindex="-1"></a><span class="fu">set_program</span>(<span class="st">&quot;Wheat Breeding&quot;</span>)</span>
+<span id="cb18-8"><a href="#cb18-8" tabindex="-1"></a></span>
+<span id="cb18-9"><a href="#cb18-9" tabindex="-1"></a><span class="fu">list_trials</span>()</span>
+<span id="cb18-10"><a href="#cb18-10" tabindex="-1"></a><span class="fu">set_trial</span>(<span class="st">&quot;Yield Trial 2022&quot;</span>)</span>
+<span id="cb18-11"><a href="#cb18-11" tabindex="-1"></a></span>
+<span id="cb18-12"><a href="#cb18-12" tabindex="-1"></a><span class="fu">list_studies</span>()</span>
+<span id="cb18-13"><a href="#cb18-13" tabindex="-1"></a><span class="fu">set_study</span>(<span class="st">&quot;Ithaca 2022&quot;</span>)</span>
+<span id="cb18-14"><a href="#cb18-14" tabindex="-1"></a></span>
+<span id="cb18-15"><a href="#cb18-15" tabindex="-1"></a>data <span class="ot">&lt;-</span> <span class="fu">get_study_data</span>()</span></code></pre></div>
+<p><strong>brapiR2</strong> — functional, pipe-friendly:</p>
+<div class="sourceCode" id="cb19"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb19-1"><a href="#cb19-1" tabindex="-1"></a><span class="fu">library</span>(brapiR2)</span>
+<span id="cb19-2"><a href="#cb19-2" tabindex="-1"></a><span class="fu">library</span>(dplyr)</span>
+<span id="cb19-3"><a href="#cb19-3" tabindex="-1"></a></span>
+<span id="cb19-4"><a href="#cb19-4" tabindex="-1"></a>con <span class="ot">&lt;-</span> <span class="fu">brapi_connection</span>(<span class="st">&quot;https://my-bms.org&quot;</span>) <span class="sc">|&gt;</span></span>
+<span id="cb19-5"><a href="#cb19-5" tabindex="-1"></a>  <span class="fu">brapi_login</span>(<span class="st">&quot;user&quot;</span>, <span class="st">&quot;pass&quot;</span>)</span>
+<span id="cb19-6"><a href="#cb19-6" tabindex="-1"></a></span>
+<span id="cb19-7"><a href="#cb19-7" tabindex="-1"></a>data <span class="ot">&lt;-</span> <span class="fu">brapi_programs</span>(con) <span class="sc">|&gt;</span></span>
+<span id="cb19-8"><a href="#cb19-8" tabindex="-1"></a>  <span class="fu">filter</span>(programName <span class="sc">==</span> <span class="st">&quot;Wheat Breeding&quot;</span>) <span class="sc">|&gt;</span></span>
+<span id="cb19-9"><a href="#cb19-9" tabindex="-1"></a>  <span class="fu">pull</span>(programDbId) <span class="sc">|&gt;</span></span>
+<span id="cb19-10"><a href="#cb19-10" tabindex="-1"></a>  (\(pid) <span class="fu">brapi_trials</span>(con, <span class="at">programDbId =</span> pid))() <span class="sc">|&gt;</span></span>
+<span id="cb19-11"><a href="#cb19-11" tabindex="-1"></a>  <span class="fu">filter</span>(trialName <span class="sc">==</span> <span class="st">&quot;Yield Trial 2022&quot;</span>) <span class="sc">|&gt;</span></span>
+<span id="cb19-12"><a href="#cb19-12" tabindex="-1"></a>  <span class="fu">pull</span>(trialDbId) <span class="sc">|&gt;</span></span>
+<span id="cb19-13"><a href="#cb19-13" tabindex="-1"></a>  (\(tid) <span class="fu">brapi_studies</span>(con, <span class="at">trialDbId =</span> tid))() <span class="sc">|&gt;</span></span>
+<span id="cb19-14"><a href="#cb19-14" tabindex="-1"></a>  <span class="fu">filter</span>(studyName <span class="sc">==</span> <span class="st">&quot;Ithaca 2022&quot;</span>) <span class="sc">|&gt;</span></span>
+<span id="cb19-15"><a href="#cb19-15" tabindex="-1"></a>  <span class="fu">pull</span>(studyDbId) <span class="sc">|&gt;</span></span>
+<span id="cb19-16"><a href="#cb19-16" tabindex="-1"></a>  <span class="fu">brapi_study_data</span>(<span class="at">con =</span> con)</span></code></pre></div>
+<p>Choose QBMS for interactive exploration in the console. Choose
+brapiR2 for reproducible scripts, pipelines, or when you need genotypic
+data and caching. Many users use both.</p>
+</div>
+</div>
+<div id="references" class="section level2">
+<h2>References</h2>
+<ul>
+<li>Selby, P., Abbeloos, R., Backlund, J.E., et al., &amp; The BrAPI
+Consortium (2019). BrAPI — an application programming interface for
+plant breeding applications. <em>Bioinformatics</em>, 35(20), 4147–4155.
+<a href="https://doi.org/10.1093/bioinformatics/btz190" class="uri">https://doi.org/10.1093/bioinformatics/btz190</a></li>
+</ul>
+</div>
+
+
+
+<!-- code folding -->
+
+
+<!-- dynamically load mathjax for compatibility with self-contained -->
+<script>
+  (function () {
+    var script = document.createElement("script");
+    script.type = "text/javascript";
+    script.src  = "https://mathjax.rstudio.com/latest/MathJax.js?config=TeX-AMS-MML_HTMLorMML";
+    document.getElementsByTagName("head")[0].appendChild(script);
+  })();
+</script>
+
+</body>
+</html>

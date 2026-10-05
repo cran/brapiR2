@@ -1,0 +1,627 @@
+# ---- BrAPI Genotyping Module ----
+# Endpoints: /samples, /variants, /variantsets, /calls, /callsets,
+#            /references, /referencesets, /allelematrix, /vendor/orders
+# Genome Maps (/maps, /markerpositions) lives in R/genome_maps.R instead;
+# brapi_get_marker_map() below builds on top of it.
+
+
+#' List Samples
+#'
+#' @inheritParams brapi_shared_params
+#' @param ... Additional query parameters
+#'   (e.g. `studyDbId`, `germplasmDbId`, `observationUnitDbId`).
+#'
+#' @return A tibble with one row per sample.
+#'
+#' @section BrAPI endpoint:
+#' `GET /samples` - see the
+#' [v2.1 specification](https://github.com/plantbreeding/BrAPI/blob/V2.1/Specification/BrAPI-Genotyping/Samples/Samples_GET_POST_PUT.yaml).
+#'
+#' Query parameters the specification defines, which may be passed
+#' through `...`:
+#'
+#' `sampleDbId`, `sampleName`, `sampleGroupDbId`, `observationUnitDbId`,
+#' `plateDbId`, `plateName`.
+#'
+#' @examples
+#' \donttest{
+#' con <- brapi_connection("https://test-server.brapi.org")
+#' if (brapi_ping(con)) {
+#'   brapi_samples(con)
+#' }
+#' }
+#'
+#' @export
+brapi_samples <- function(con, ...) {
+  brapi_get(con, "/samples", query = list(...))
+}
+
+
+#' List Variants (Markers/SNPs)
+#'
+#' @inheritParams brapi_shared_params
+#' @inheritParams brapi_shared_filters
+#'
+#' @return A tibble with one row per variant.
+#'
+#' @section BrAPI endpoint:
+#' `GET /variants` - see the
+#' [v2.1 specification](https://github.com/plantbreeding/BrAPI/blob/V2.1/Specification/BrAPI-Genotyping/Variants/Variants_GET.yaml).
+#'
+#' Query parameters the specification defines, which may be passed
+#' through `...`:
+#'
+#' `variantDbId`, `variantSetDbId`, `referenceDbId`, `referenceSetDbId`.
+#'
+#' @examples
+#' \donttest{
+#' con <- brapi_connection("https://test-server.brapi.org")
+#' if (brapi_ping(con)) {
+#'   brapi_variants(con, variantSetDbId = "variantset1")
+#' }
+#' }
+#'
+#' @export
+brapi_variants <- function(con, variantSetDbId = NULL, ...) {
+  query <- list(...)
+  if (!is.null(variantSetDbId)) query$variantSetDbId <- variantSetDbId
+  brapi_get(con, "/variants", query = query)
+}
+
+
+#' List Variant Sets (Datasets)
+#'
+#' @inheritParams brapi_shared_params
+#' @inheritParams brapi_shared_filters
+#'
+#' @return A tibble with one row per variant set.
+#'
+#' @section BrAPI endpoint:
+#' `GET /variantsets` - see the
+#' [v2.1 specification](https://github.com/plantbreeding/BrAPI/blob/V2.1/Specification/BrAPI-Genotyping/VariantSets/VariantSets_GET.yaml).
+#'
+#' Query parameters the specification defines, which may be passed
+#' through `...`:
+#'
+#' `variantSetDbId`, `variantDbId`, `callSetDbId`, `referenceSetDbId`.
+#'
+#' @examples
+#' \donttest{
+#' con <- brapi_connection("https://test-server.brapi.org")
+#' if (brapi_ping(con)) {
+#'   brapi_variant_sets(con)
+#' }
+#' }
+#'
+#' @export
+brapi_variant_sets <- function(con, studyDbId = NULL, ...) {
+  query <- list(...)
+  if (!is.null(studyDbId)) query$studyDbId <- studyDbId
+  brapi_get(con, "/variantsets", query = query)
+}
+
+
+#' List Genotype Calls
+#'
+#' @inheritParams brapi_shared_params
+#' @inheritParams brapi_shared_filters
+#'
+#' @return A tibble with one row per genotype call.
+#'
+#' @section BrAPI endpoint:
+#' `GET /calls` - see the
+#' [v2.1 specification](https://github.com/plantbreeding/BrAPI/blob/V2.1/Specification/BrAPI-Genotyping/Calls/Calls_GET_PUT.yaml).
+#'
+#' Query parameters the specification defines, which may be passed
+#' through `...`:
+#'
+#' `callSetDbId`, `variantDbId`, `variantSetDbId`, `expandHomozygotes`,
+#' `unknownString`, `sepPhased`, `sepUnphased`.
+#'
+#' @examples
+#' \donttest{
+#' con <- brapi_connection("https://test-server.brapi.org")
+#' if (brapi_ping(con)) {
+#'   brapi_calls(con, variantSetDbId = "variantset1")
+#' }
+#' }
+#'
+#' @export
+brapi_calls <- function(con, variantSetDbId = NULL, ...) {
+  query <- list(...)
+  if (!is.null(variantSetDbId)) query$variantSetDbId <- variantSetDbId
+  brapi_get(con, "/calls", query = query)
+}
+
+
+#' List Call Sets (Samples with Genotype Data)
+#'
+#' @inheritParams brapi_shared_params
+#'
+#' @return A tibble with one row per call set.
+#'
+#' @section BrAPI endpoint:
+#' `GET /callsets` - see the
+#' [v2.1 specification](https://github.com/plantbreeding/BrAPI/blob/V2.1/Specification/BrAPI-Genotyping/CallSets/CallSets_GET.yaml).
+#'
+#' Query parameters the specification defines, which may be passed
+#' through `...`:
+#'
+#' `callSetDbId`, `callSetName`, `variantSetDbId`, `sampleDbId`.
+#'
+#' @examples
+#' \donttest{
+#' con <- brapi_connection("https://test-server.brapi.org")
+#' if (brapi_ping(con)) {
+#'   brapi_call_sets(con)
+#' }
+#' }
+#'
+#' @export
+brapi_call_sets <- function(con, ...) {
+  brapi_get(con, "/callsets", query = list(...))
+}
+
+
+#' List References (Chromosomes/Contigs)
+#'
+#' @inheritParams brapi_shared_params
+#'
+#' @return A tibble with one row per reference sequence.
+#'
+#' @section BrAPI endpoint:
+#' `GET /references` - see the
+#' [v2.1 specification](https://github.com/plantbreeding/BrAPI/blob/V2.1/Specification/BrAPI-Genotyping/References/References_GET.yaml).
+#'
+#' Query parameters the specification defines, which may be passed
+#' through `...`:
+#'
+#' `referenceDbId`, `referenceSetDbId`, `accession`, `md5checksum`,
+#' `isDerived`, `minLength`, `maxLength`.
+#'
+#' @examples
+#' \donttest{
+#' con <- brapi_connection("https://test-server.brapi.org")
+#' if (brapi_ping(con)) {
+#'   brapi_references(con)
+#' }
+#' }
+#'
+#' @export
+brapi_references <- function(con, ...) {
+  brapi_get(con, "/references", query = list(...))
+}
+
+
+#' List Reference Sets (Genome Assemblies)
+#'
+#' @inheritParams brapi_shared_params
+#'
+#' @return A tibble with one row per reference set.
+#'
+#' @section BrAPI endpoint:
+#' `GET /referencesets` - see the
+#' [v2.1 specification](https://github.com/plantbreeding/BrAPI/blob/V2.1/Specification/BrAPI-Genotyping/ReferenceSets/ReferenceSets_GET.yaml).
+#'
+#' Query parameters the specification defines, which may be passed
+#' through `...`:
+#'
+#' `referenceSetDbId`, `accession`, `assemblyPUI`, `md5checksum`.
+#'
+#' @examples
+#' \donttest{
+#' con <- brapi_connection("https://test-server.brapi.org")
+#' if (brapi_ping(con)) {
+#'   brapi_reference_sets(con)
+#' }
+#' }
+#'
+#' @export
+brapi_reference_sets <- function(con, ...) {
+  brapi_get(con, "/referencesets", query = list(...))
+}
+
+
+#' Get Allele Matrix
+#'
+#' Retrieves genotype calls from the `/allelematrix` endpoint and returns a
+#' tidy tibble with one row per (variant, callSet) combination. The
+#' `/allelematrix` response has a unique structure (2-D pagination, no
+#' `result$data` envelope) so it cannot use the generic `brapi_get()`.
+#'
+#' @inheritParams brapi_shared_params
+#' @inheritParams brapi_shared_filters
+#' @param ... Additional query parameters
+#'   (e.g. `expandHomozygotes`, `unknownString`, `sepPhased`, `sepUnphased`).
+#'
+#' @return A tibble with columns `variantDbId`, `callSetDbId`, `genotype`.
+#'
+#' @section BrAPI endpoint:
+#' `GET /allelematrix` - see the
+#' [v2.1 specification](https://github.com/plantbreeding/BrAPI/blob/V2.1/Specification/BrAPI-Genotyping/AlleleMatrix/AlleleMatrix_GET.yaml).
+#'
+#' Query parameters the specification defines, which may be passed
+#' through `...`:
+#'
+#' `dimensionVariantPage`, `dimensionVariantPageSize`,
+#' `dimensionCallSetPage`, `dimensionCallSetPageSize`.
+#'
+#' @examples
+#' \donttest{
+#' con <- brapi_connection("https://test-server.brapi.org")
+#' if (brapi_ping(con)) {
+#'   brapi_allele_matrix(con, variantSetDbId = "variantset1")
+#' }
+#' }
+#'
+#' @export
+brapi_allele_matrix <- function(con, variantSetDbId = NULL, ...) {
+  validate_con(con)
+
+  query <- list(...)
+  if (!is.null(variantSetDbId)) query$variantSetDbId <- variantSetDbId
+  query$pageSize <- query$pageSize %||% con$page_size
+
+  raw <- fetch_allele_matrix_pages(con, query)
+
+  n_v <- length(raw$variant_ids)
+  n_cs <- length(raw$callset_ids)
+
+  if (n_v == 0L || n_cs == 0L) {
+    return(tibble())
+  }
+
+  tibble(
+    variantDbId = rep(raw$variant_ids, each = n_cs),
+    callSetDbId = rep(raw$callset_ids, times = n_v),
+    genotype    = unlist(lapply(raw$gt_mat, function(row) row[seq_len(n_cs)]))
+  )
+}
+
+
+#' Internal: Page Through the Allele Matrix Endpoint
+#'
+#' Accumulates variant IDs, call set IDs, and the genotype data matrix
+#' across all `callSetPage` pages of the `/allelematrix` response.
+#'
+#' @inheritParams brapi_shared_params
+#' @param query Named list. Query parameters, including `pageSize` and any
+#'   user-supplied filters.
+#'
+#' @return A list with elements `variant_ids`, `callset_ids`, and `gt_mat`
+#'   (a list where `gt_mat[[i]]` holds all genotype strings for variant `i`).
+#' @keywords internal
+#' @noRd
+fetch_allele_matrix_pages <- function(con, query) {
+  cs_page <- 0L
+  cs_total_pages <- 1L
+
+  all_variant_ids <- character(0)
+  all_callset_ids <- character(0)
+  # gt_mat[i] will hold all genotype strings for variant i across callset pages
+  gt_mat <- list()
+
+  repeat {
+    query$callSetPage <- cs_page
+
+    resp <- brapi_req(con, "/allelematrix") |>
+      req_url_query(!!!query) |>
+      req_perform()
+
+    body <- resp_body_json(resp, simplifyVector = FALSE)
+
+    # /allelematrix uses an array of pagination objects, one per dimension
+    for (p in body$result$pagination) {
+      if (identical(p$dimension, "CALLSETS")) {
+        cs_total_pages <- p$totalPages %||% 1L
+      }
+    }
+
+    cs_ids <- unlist(body$result$callSetDbIds)
+    v_ids <- unlist(body$result$variantDbIds)
+
+    if (cs_page == 0L) {
+      all_variant_ids <- v_ids
+      gt_mat <- vector("list", length(v_ids))
+    }
+    all_callset_ids <- c(all_callset_ids, cs_ids)
+
+    # Find the Genotype data matrix
+    for (dm in body$result$dataMatrices) {
+      nm <- dm$dataMatrixName %||% ""
+      ab <- dm$dataMatrixAbbreviation %||% ""
+      if (nm == "Genotype" || ab == "GT") {
+        for (i in seq_along(dm$dataMatrix)) {
+          gt_mat[[i]] <- c(gt_mat[[i]], unlist(dm$dataMatrix[[i]]))
+        }
+        break
+      }
+    }
+
+    cs_page <- cs_page + 1L
+    if (cs_page >= cs_total_pages) break
+  }
+
+  list(
+    variant_ids  = all_variant_ids,
+    callset_ids  = all_callset_ids,
+    gt_mat       = gt_mat
+  )
+}
+
+
+#' Search Variants
+#'
+#' @inheritParams brapi_shared_search
+#' @param variantSetDbIds Character vector. Filter by variant set IDs.
+#'
+#' @return A tibble of matching variants.
+#'
+#' @section BrAPI endpoint:
+#' `POST /search/variants` - see the
+#' [v2.1 specification](https://github.com/plantbreeding/BrAPI/blob/V2.1/Specification/BrAPI-Genotyping/Variants/Search_Variants_POST.yaml).
+#'
+#' @examples
+#' \donttest{
+#' con <- brapi_connection("https://test-server.brapi.org")
+#' if (brapi_ping(con)) {
+#'   brapi_search_variants(con, variantSetDbIds = "variantset1")
+#' }
+#' }
+#'
+#' @export
+brapi_search_variants <- function(con, variantSetDbIds = NULL, ...) {
+  body <- compact(list(variantSetDbIds = variantSetDbIds, ...))
+  brapi_post_search(con, "/search/variants", body = body)
+}
+
+
+#' Search Genotype Calls
+#'
+#' @inheritParams brapi_shared_search
+#' @param variantSetDbIds Character vector. Filter by variant set IDs.
+#' @param callSetDbIds Character vector. Filter by call set IDs.
+#'
+#' @return A tibble of matching genotype calls.
+#'
+#' @section BrAPI endpoint:
+#' `POST /search/calls` - see the
+#' [v2.1 specification](https://github.com/plantbreeding/BrAPI/blob/V2.1/Specification/BrAPI-Genotyping/Calls/Search_Calls_POST.yaml).
+#'
+#' @examples
+#' \donttest{
+#' con <- brapi_connection("https://test-server.brapi.org")
+#' if (brapi_ping(con)) {
+#'   brapi_search_calls(con, variantSetDbIds = "variantset1")
+#' }
+#' }
+#'
+#' @export
+brapi_search_calls <- function(con, variantSetDbIds = NULL,
+                               callSetDbIds = NULL, ...) {
+  body <- compact(list(
+    variantSetDbIds = variantSetDbIds,
+    callSetDbIds    = callSetDbIds,
+    ...
+  ))
+  brapi_post_search(con, "/search/calls", body = body)
+}
+
+
+#' Get Dosage Matrix for Genomic Selection
+#'
+#' Fetches genotype data from a BrAPI server and converts it into a numeric
+#' dosage matrix (samples × markers) compatible with genomic selection
+#' packages like `rrBLUP`, `BGLR`, and `sommer`.
+#'
+#' Allele dosage is computed by splitting each genotype string on `sep` (or
+#' `"|"` for phased calls) and counting how many alleles are non-reference
+#' (i.e. not `"0"`). Missing calls (`unknown_string`, `"."`, or `""`) become
+#' `NA`.
+#'
+#' @inheritParams brapi_shared_params
+#' @param variantSetDbId Character. The variant set to retrieve.
+#' @param sep Character. Unphased allele separator. Default `"/"` (e.g.
+#'   `"0/1"`). Phased calls using `"|"` are also handled automatically.
+#' @param unknown_string Character. String representing missing data.
+#'   Default `"."`.
+#'
+#' @return A numeric matrix: rows = samples (callSetDbIds), columns = markers
+#'   (variantDbIds). Values are integer dosages (0, 1, 2 for diploids; 0–N
+#'   for polyploids). Missing calls are `NA`.
+#'
+#' @examples
+#' \donttest{
+#' con <- brapi_connection("https://test-server.brapi.org")
+#' if (brapi_ping(con)) {
+#'   dosage <- brapi_get_dosage_matrix(con, "variantset1")
+#'   dim(dosage)
+#'   # Use with rrBLUP:
+#'   # library(rrBLUP)
+#'   # result <- mixed.solve(y = pheno$yield, Z = dosage)
+#' }
+#' }
+#'
+#' @export
+brapi_get_dosage_matrix <- function(con, variantSetDbId,
+                                    sep = "/", unknown_string = ".") {
+  cli_alert_info(
+    "Fetching allele matrix for variant set {.val {variantSetDbId}}..."
+  )
+
+  tidy <- brapi_allele_matrix(con, variantSetDbId = variantSetDbId)
+
+  if (nrow(tidy) == 0L) {
+    cli_abort("No allele matrix data returned for {.val {variantSetDbId}}.")
+  }
+
+  cli_alert_info(
+    "Encoding {nrow(tidy)} genotype calls as allele dosages..."
+  )
+
+  geno_to_dosage <- function(geno) {
+    if (is.na(geno) || geno == unknown_string ||
+          geno == "." || geno == "") {
+      return(NA_real_)
+    }
+    alleles <- strsplit(geno, sep, fixed = TRUE)[[1]]
+    # Fall back to phased separator
+    if (length(alleles) < 2L) {
+      alleles <- strsplit(geno, "|", fixed = TRUE)[[1]]
+    }
+    if (length(alleles) < 2L) {
+      return(NA_real_)
+    }
+    # Count non-reference alleles (anything other than "0")
+    sum(alleles != "0", na.rm = TRUE)
+  }
+
+  tidy$dosage <- vapply(tidy$genotype, geno_to_dosage, numeric(1L))
+
+  # Pivot to wide: rows = samples (callSets), cols = markers (variants)
+  wide <- pivot_wider(
+    tidy[, c("callSetDbId", "variantDbId", "dosage")],
+    names_from  = "variantDbId",
+    values_from = "dosage"
+  )
+
+  sample_ids <- wide$callSetDbId
+  mat <- as.matrix(wide[, -1L, drop = FALSE])
+  rownames(mat) <- sample_ids
+
+  cli_alert_success(
+    "Dosage matrix ready: {nrow(mat)} samples x {ncol(mat)} markers."
+  )
+  mat
+}
+
+
+#' Get Marker Map
+#'
+#' Convenience function that retrieves marker positions on a genome map as
+#' a tidy tibble. Positions come from the Genome Maps entity
+#' ([brapi_marker_positions()] / `/markerpositions`), which places a
+#' marker on a named [brapi_map()] - genetic (cM) or physical (bp), per
+#' the map's `type` and `unit` - not from [brapi_variants()]'s
+#' `start`/`referenceName`, which places a variant on a reference assembly
+#' instead. A server may populate either, both, or neither; the two are
+#' independent coordinate systems, not duplicates of each other.
+#'
+#' Supply exactly one of `mapDbId` (every marker placed on that one map)
+#' or `variantSetDbId` (positions for every variant in that set, wherever
+#' they have been placed). The `variantSetDbId` path looks variant IDs up
+#' first via [brapi_variants()], then retrieves their positions in one
+#' call via [brapi_search_marker_positions()] rather than the GET
+#' `/markerpositions` filter, which only accepts a single `variantDbId`.
+#'
+#' If a marker is placed on more than one map, it contributes one row per
+#' placement - the result is never collapsed to one row per marker.
+#'
+#' @inheritParams brapi_shared_params
+#' @param variantSetDbId Character or NULL. A variant set to retrieve
+#'   marker positions for. Mutually exclusive with `mapDbId`.
+#' @param mapDbId Character or NULL. A single genome map to retrieve all
+#'   marker positions from. Mutually exclusive with `variantSetDbId`.
+#'
+#' @return A tibble with columns `variantDbId`, `variantName`, `mapDbId`,
+#'   `mapName`, `type`, `unit`, `linkageGroupName`, and `position` - one
+#'   row per marker-map placement, so a marker on several maps appears
+#'   more than once. `type` and `unit` are joined in from [brapi_maps()]
+#'   so a caller can tell a genetic (cM) map from a physical (bp) one.
+#'
+#' @examples
+#' \donttest{
+#' con <- brapi_connection("https://test-server.brapi.org")
+#' if (brapi_ping(con)) {
+#'   brapi_get_marker_map(con, mapDbId = "genome_map1")
+#'   brapi_get_marker_map(con, variantSetDbId = "variantset1")
+#' }
+#' }
+#'
+#' @export
+brapi_get_marker_map <- function(con, variantSetDbId = NULL, mapDbId = NULL) {
+  if (is.null(variantSetDbId) && is.null(mapDbId)) {
+    cli_abort(c(
+      "Supply exactly one of {.arg variantSetDbId} or {.arg mapDbId}.",
+      "i" = "Neither was supplied."
+    ))
+  }
+  if (!is.null(variantSetDbId) && !is.null(mapDbId)) {
+    cli_abort(c(
+      "Supply exactly one of {.arg variantSetDbId} or {.arg mapDbId}.",
+      "i" = "Both were supplied; only one identifier is allowed at a time."
+    ))
+  }
+
+  if (!is.null(mapDbId)) {
+    positions <- brapi_marker_positions(con, mapDbId = mapDbId)
+    if (nrow(positions) == 0L) {
+      cli_warn("No marker positions found for map {.val {mapDbId}}.")
+      return(empty_marker_map())
+    }
+  } else {
+    variants <- brapi_variants(con, variantSetDbId = variantSetDbId)
+    if (nrow(variants) == 0L) {
+      cli_warn("No variants found for {.val {variantSetDbId}}.")
+      return(empty_marker_map())
+    }
+
+    variant_ids <- unique(variants$variantDbId)
+    positions <- brapi_search_marker_positions(con, variantDbIds = variant_ids)
+    n_found <- if (nrow(positions) == 0L) {
+      0L
+    } else {
+      length(unique(positions$variantDbId))
+    }
+
+    if (n_found < length(variant_ids)) {
+      cli_warn(paste0(
+        "{length(variant_ids) - n_found} of {length(variant_ids)} ",
+        "variants in {.val {variantSetDbId}} have no marker position ",
+        "record; returning positions for the remaining {n_found}."
+      ))
+    }
+
+    if (nrow(positions) == 0L) {
+      return(empty_marker_map())
+    }
+  }
+
+  # Join in mapName/type/unit from the Genome Maps entity rather than
+  # trusting /markerpositions' own (spec-optional) mapName field.
+  map_ids <- unique(positions$mapDbId)
+  all_maps <- brapi_maps(con)
+  meta_cols <- intersect(
+    c("mapDbId", "mapName", "type", "unit"), names(all_maps)
+  )
+  map_meta <- all_maps[all_maps$mapDbId %in% map_ids, meta_cols, drop = FALSE]
+
+  positions$mapName <- NULL
+  result <- dplyr::left_join(positions, map_meta, by = "mapDbId")
+
+  cols <- intersect(
+    c("variantDbId", "variantName", "mapDbId", "mapName", "type", "unit",
+      "linkageGroupName", "position"),
+    names(result)
+  )
+  result[, cols, drop = FALSE]
+}
+
+
+#' Internal: Empty Marker-Map Result Tibble
+#'
+#' @return A zero-row tibble with [brapi_get_marker_map()]'s column set.
+#' @keywords internal
+#' @noRd
+empty_marker_map <- function() {
+  tibble(
+    variantDbId      = character(),
+    variantName      = character(),
+    mapDbId          = character(),
+    mapName          = character(),
+    type             = character(),
+    unit             = character(),
+    linkageGroupName = character(),
+    position         = integer()
+  )
+}

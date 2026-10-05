@@ -1,0 +1,459 @@
+---
+title: "brapiR2"
+output: rmarkdown::html_vignette
+vignette: >
+  %\VignetteIndexEntry{brapiR2}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+```{r setup, include = FALSE}
+knitr::opts_chunk$set(collapse = TRUE, comment = "#>")
+con <- brapiR2::brapi_connection("https://test-server.brapi.org")
+server_up <- isTRUE(tryCatch(
+  brapiR2::brapi_ping(con),
+  error = function(e) FALSE
+))
+```
+
+```{r server-down-notice, eval = !server_up, echo = FALSE, results = "asis"}
+cat(
+  "> **Note:** the public BrAPI test server",
+  "(`https://test-server.brapi.org`) was unreachable when this vignette",
+  "was built, so the live output below was skipped. The code and its",
+  "expected shape are still shown."
+)
+```
+
+**brapiR2** provides pipe-friendly, stateless access to BrAPI v2 servers.
+Unlike stateful clients where you navigate by setting a "current" program or
+trial, brapiR2 functions are independent — you pass a connection object and
+get a tibble back. This makes them ideal for scripting, pipelines, and
+building downstream tools.
+
+## Installation
+
+brapiR2 is on rOpenSci's R-universe, so `install.packages()` works once
+that repository is added.
+
+```{r install, eval = FALSE}
+# Not run here: this would reinstall the package while building its own
+# documentation.
+install.packages(
+  "brapiR2",
+  repos = c("https://ropensci.r-universe.dev", "https://cloud.r-project.org")
+)
+```
+
+## Connecting to a Server
+
+The examples below run live against the public BrAPI test server, which
+requires no authentication.
+
+```{r connect, eval = server_up}
+library(brapiR2)
+
+con <- brapi_connection("https://test-server.brapi.org")
+con
+```
+
+Every function takes `con` as its first argument. No global state is
+modified.
+
+Most real servers require credentials. See
+[Authentication](#authentication) below for username/password login,
+OAuth 2.0, and bearer tokens, and
+[Handling Credentials Safely](#credential-handling) for keeping them out
+of your scripts.
+
+## Exploring Programs and Trials
+
+BrAPI organises breeding data as a nesting of four levels, and the calls
+below walk down it. A **program** is a long-running breeding effort with a
+continuing objective, such as a maize program developing mid-altitude
+tropical hybrids; it persists across decades. A **trial** groups experiments
+that share a purpose within that program, typically one season's worth of
+work, such as the 2022 advanced yield trials. A **study** is a single trial
+grown at one location in one season, which is the level at which plots
+physically exist and measurements are actually taken. Below that sit
+**observation units**, the individual plots, plants or samples that carry the
+measurements themselves.
+
+You narrow from one level to the next because each level's identifier is the
+filter for the one below it. In practice you rarely know a `studyDbId` up
+front; you know you want last season's yield trials from a particular
+program, and you find your way down. Note that what a breeder calls an
+"environment" in a multi-environment analysis corresponds to a BrAPI study,
+not a location, since the same site in two seasons is two environments.
+
+```{r explore, eval = server_up}
+library(dplyr)
+
+# List all breeding programs
+programs <- brapi_programs(con)
+programs
+
+# List trials in the first program
+trials <- brapi_trials(con, programDbId = programs$programDbId[1])
+trials
+
+# List studies within that trial
+studies <- brapi_studies(con, trialDbId = trials$trialDbId[1])
+studies
+```
+
+## Fetching Phenotypic Data
+
+The `/observations` endpoint returns data in long format, one row per
+measurement, with the trait identified in a column and the value in another.
+That is the right shape for transport and the wrong shape for analysis:
+nearly every R modelling function expects one row per experimental unit and
+one column per variable.
+
+`brapi_study_data()` does that reshaping for you. It fetches the study's
+observations, pivots traits into columns, and joins the germplasm and plot
+identifiers you need to link phenotypes back to genotypes or to a field
+layout. Doing this by hand is not difficult, but it is fiddly in ways that
+are easy to get subtly wrong, particularly when an observation unit carries
+more than one value for the same trait. Repeated measurements are kept as
+list-columns rather than silently averaged or dropped, which is why the
+summary below unnests before taking means. The function also falls back to
+fetching all observations and filtering client-side when a server does not
+honour the `studyDbId` filter, so it returns data on servers where a direct
+`brapi_observations()` call would come back empty.
+
+```{r pheno, eval = server_up}
+# Get analysis-ready wide format: one row per plot, one column per trait
+data <- brapi_study_data(con, studies$studyDbId[1])
+data
+```
+
+The public test server's studies currently have no recorded observations, so
+`brapi_study_data()` returns an empty tibble and a warning rather than
+fabricated numbers — this is the function's real, documented behaviour when
+a study has no data, not a bug in the example. Downstream code should check
+for this:
+
+```{r pheno-summary, eval = server_up}
+if (nrow(data) > 0) {
+  trait_cols <- setdiff(
+    names(data),
+    c(
+      "observationUnitDbId", "observationUnitName",
+      "germplasmDbId", "germplasmName", "studyDbId", "studyName"
+    )
+  )
+  # Some observation units have more than one recorded value for the same
+  # trait (repeated measurements), which brapi_study_data() keeps as a
+  # list-column. Unnest those into one row per observation before
+  # summarising, so mean() sees plain numbers either way.
+  data |>
+    tidyr::unnest_longer(dplyr::any_of(trait_cols)) |>
+    mutate(across(all_of(trait_cols), as.numeric)) |>
+    summarise(across(all_of(trait_cols), \(x) mean(x, na.rm = TRUE)))
+} else {
+  cat("No observations available for this study on the public test server.\n")
+}
+```
+
+## Fetching Genotypic Data
+
+A **variant set** is a genotyping dataset: a defined panel of markers scored
+on a defined set of samples, usually corresponding to one genotyping run or
+one platform. A server may hold several, and they will differ in marker
+density, in which individuals were scored, and often in reference genome
+build, so picking the right one matters.
+
+The dosage matrix is the form nearly every downstream analysis wants. Each
+cell counts how many copies of the alternate allele an individual carries at
+that marker, so for diploid maize the values are 0 for homozygous reference,
+1 for heterozygous, 2 for homozygous alternate, and `NA` where the call
+failed. For polyploids the range extends to the ploidy level, which is why
+the function returns counts rather than a genotype string. Representing
+genotypes numerically this way is what allows them to enter a mixed model as
+a design matrix: additive marker effects are then simply regression
+coefficients on allele count.
+
+```{r geno, eval = server_up}
+# List available variant sets (genotyping datasets)
+vsets <- brapi_variant_sets(con)
+vsets
+
+vs_id <- vsets$variantSetDbId[1]
+```
+
+`brapi_get_marker_map()` used to read a marker's chromosome and position off
+`brapi_variants()`'s `referenceName`/`start` columns. On this server those
+come back `NA` for every variant — and per the BrAPI spec, that is legal:
+`Variant.start` and `Variant.referenceName` place a variant on a reference
+*assembly*, and the spec explicitly allows a server to leave them unset if
+it has no such assembly configured for that variant, rather than treating
+`NA` as an error condition.
+
+This server has simply chosen not to populate assembly coordinates on its
+variants. Positions for the same markers do exist, just under a different
+resource: the **Genome Maps** entity (`/maps`, `/markerpositions`) places a
+marker on a named *map* instead of a reference assembly — genetic
+(measured in cM) or physical (measured in bp), per the map's own `type`
+and `unit` fields — and the same marker can appear on more than one map.
+`brapi_get_marker_map()` now reads from there instead:
+
+```{r geno-map, eval = server_up}
+# Positions for every variant in the set, wherever they have been placed
+markers <- brapi_get_marker_map(con, variantSetDbId = vs_id)
+markers
+```
+
+Not every variant in a set is guaranteed to have a map placement. On this
+server, only some of the variant set's variants have one — the warning
+above states the exact count rather than silently returning a shorter
+tibble. If you already know which map you care about, querying it directly
+skips the variant-set lookup and returns the same shape:
+
+```{r geno-map-by-id, eval = server_up}
+maps <- brapi_maps(con)
+maps[, c("mapDbId", "mapName", "type", "unit")]
+```
+
+Both maps on this test server declare a "Physical Map" type with a "cM"
+unit. That's inconsistent fixture data on this particular server, not
+something brapiR2 or the BrAPI specification produces. On a real server
+the two fields agree.
+
+```{r geno-map-by-id-2, eval = server_up}
+brapi_get_marker_map(con, mapDbId = maps$mapDbId[1])
+```
+
+```{r geno-dosage, eval = server_up}
+# Get dosage matrix for genomic selection (samples x markers, values 0/1/2)
+dosage <- brapi_get_dosage_matrix(con, vs_id)
+dim(dosage)
+dosage[seq_len(min(3, nrow(dosage))), seq_len(min(5, ncol(dosage)))]
+```
+
+## Authentication
+
+Most production BrAPI servers require authentication. These calls need your
+own server and credentials, so they are shown but not run here.
+
+```{r auth, eval = FALSE}
+# Username/password login - used by Breedbase, BMS, and Germinate
+con <- brapi_connection("https://my-breedbase.org")
+con <- brapi_login(con, "username", "password")
+
+# OAuth 2.0 (EBS and similar)
+con <- brapi_login_oauth2(
+  con,
+  client_id     = "my_id",
+  client_secret = "my_secret",
+  authorize_url = "https://auth.example.org/authorize",
+  access_url    = "https://auth.example.org/token"
+)
+
+# Bearer token (GIGWA, custom servers)
+con <- brapi_set_token(con, Sys.getenv("BRAPI_TOKEN"))
+```
+
+### Handling Credentials Safely {#credential-handling}
+
+The example above reads a token from an environment variable rather than
+writing it as a literal string, and that's deliberate: a password or token
+typed directly into a script gets committed to version control the moment
+someone runs `git add`, and stays in the project's history even after it's
+"removed" in a later commit. There are two safer places to keep it.
+
+**`.Renviron` and `Sys.getenv()`.** For scripts you run yourself, put
+credentials in a `.Renviron` file (in your home directory for all
+projects, or in the project directory for that project only) as
+`NAME=value` pairs, one per line:
+
+```
+BRAPI_TOKEN=abc123...
+BRAPI_PASSWORD=my_password
+```
+
+R reads `.Renviron` automatically at startup, so after restarting your R
+session the values are available via `Sys.getenv()`:
+
+```{r renviron, eval = FALSE}
+con <- brapi_connection("https://my-breedbase.org")
+con <- brapi_login(
+  con, Sys.getenv("BRAPI_USERNAME"), Sys.getenv("BRAPI_PASSWORD")
+)
+```
+
+Add `.Renviron` to `.gitignore` so it never gets committed. `usethis::edit_r_environ()`
+opens the right file for you.
+
+**The keyring package.** For credentials you want stored in your
+operating system's own credential manager (Keychain on macOS, Credential
+Manager on Windows, Secret Service on Linux) rather than in a plaintext
+file, use [keyring](https://cran.r-project.org/package=keyring).
+`key_set()` prompts interactively for a secret and stores it; `key_get()`
+retrieves it later, in this session or a future one, without the value
+ever appearing in your script or your R history:
+
+```{r keyring, eval = FALSE}
+# Run once, interactively - prompts for the password and stores it
+keyring::key_set("brapiR2_my-breedbase", username = "my_username")
+
+# In scripts, from then on:
+con <- brapi_connection("https://my-breedbase.org")
+con <- brapi_login(
+  con,
+  username = "my_username",
+  password = keyring::key_get("brapiR2_my-breedbase", username = "my_username")
+)
+```
+
+Either approach keeps the secret out of the script itself, out of shell
+history, and out of anything you might `git commit` or share.
+
+**The token lives in the connection object.** Once you have
+authenticated, the credential is held inside `con` and goes wherever
+`con` goes: `saveRDS(con, "con.rds")` writes it to disk in plain text,
+and `str(con)` or `unclass(con)` prints it in full. `print(con)` shows
+only whether the connection is authenticated, never the token itself, so
+that is what to paste when sharing a session or reporting a problem.
+
+## Caching and Parallel Fetching
+
+Two features for when you are fetching the same data repeatedly, or a lot
+of it at once. Both run against the public test server here; neither needs
+authentication.
+
+**Caching** stores each response on disk under a key built from the URL and
+query parameters, and returns it without a network call for as long as the
+TTL lasts. Reach for it when you are developing a script against a slow or
+distant server and re-running the same calls, or when a knitted report
+would otherwise hit the server once per render. It is off by default, per
+connection, and never shared between connections.
+
+```{r performance, eval = server_up}
+# Enable caching — repeated calls within the TTL return instantly
+cache_dir <- tempfile("brapi_cache_")
+dir.create(cache_dir)
+perf_con <- brapi_cache_enable(con, ttl = 3600, dir = cache_dir)
+
+# First call: hits the server
+invisible(brapi_programs(perf_con))
+
+# Second call: reads from disk (sub-millisecond)
+brapi_programs(perf_con)
+
+# Clear all cached files
+brapi_cache_clear(perf_con)
+```
+
+**Parallel fetching** runs one call across many identifiers at once, which
+helps when you are pulling data for dozens of studies or germplasm and each
+request is slow. `brapi_fetch_parallel()` uses whatever `future` plan is
+already active — sequential unless you say otherwise — so choosing the
+backend, and shutting it down afterwards, is yours to do. See
+[`future`'s own documentation](https://future.futureverse.org/) for the
+available backends, and DESIGN.md for why the package does not set one for
+you:
+
+```{r parallel, eval = server_up && requireNamespace("furrr", quietly = TRUE) && requireNamespace("future", quietly = TRUE)}
+future::plan(future::multisession, workers = 2)
+
+# Fetch study data from multiple studies in parallel (all studies on the
+# server, not just the one attached to the trial filtered above)
+study_ids <- brapi_studies(con)$studyDbId
+all_data <- brapi_fetch_parallel(perf_con, brapi_study_data, study_ids)
+all_data
+```
+
+As above, this server's studies have no observations, so `all_data` is an
+empty tibble here too — the call itself, and the parallel-fetch mechanics,
+are real.
+
+Since you set the plan, shutting the workers back down when you're done
+with them is your responsibility too, not something the package does for
+you on exit:
+
+```{r cleanup-parallel, eval = server_up && requireNamespace("future", quietly = TRUE)}
+future::plan(future::sequential)
+```
+
+---
+
+## Comparison with QBMS
+
+[QBMS](https://cran.r-project.org/package=QBMS) is a well-established R
+package for BrAPI access that has been widely adopted in the breeding
+community. brapiR2 and QBMS are **complementary tools designed for
+different workflows**.
+
+| Feature | QBMS | brapiR2 |
+|---------|------|---------|
+| Style | Stateful (set program → set trial → set study) | Stateless (pass `con` everywhere) |
+| Returns | Data frames | Tibbles (tidy, list-columns for nested data) |
+| Pipe-friendly | Partial | Yes, all functions follow `f(con, ...)` |
+| Caching | No | Yes, disk-based with TTL |
+| Parallel fetch | No | Via the caller's own `future` backend |
+| Genotyping | Limited | Allele matrix, dosage matrix, marker map (32/37 BrAPI entities covered overall, read-only) |
+| Authentication | Yes | Yes |
+
+brapiR2 targets BrAPI v2 only, by design - see the "Design History" section
+of [DESIGN.md](https://github.com/ropensci/brapiR2/blob/main/DESIGN.md)
+for why. QBMS's own BrAPI version support is a separate question from this
+comparison; check QBMS's own documentation for its current v1/v2 coverage
+rather than relying on a claim made here.
+
+### Same workflow, different style
+
+The examples below use a private Breedbase-style server and credentials, so
+they are illustrative only.
+
+**QBMS** — navigational, stateful:
+
+```{r qbms-example, eval = FALSE}
+library(QBMS)
+
+set_crop("Wheat")
+login_bms("https://my-bms.org", "user", "pass")
+
+list_programs()
+set_program("Wheat Breeding")
+
+list_trials()
+set_trial("Yield Trial 2022")
+
+list_studies()
+set_study("Ithaca 2022")
+
+data <- get_study_data()
+```
+
+**brapiR2** — functional, pipe-friendly:
+
+```{r brapiR2-example, eval = FALSE}
+library(brapiR2)
+library(dplyr)
+
+con <- brapi_connection("https://my-bms.org") |>
+  brapi_login("user", "pass")
+
+data <- brapi_programs(con) |>
+  filter(programName == "Wheat Breeding") |>
+  pull(programDbId) |>
+  (\(pid) brapi_trials(con, programDbId = pid))() |>
+  filter(trialName == "Yield Trial 2022") |>
+  pull(trialDbId) |>
+  (\(tid) brapi_studies(con, trialDbId = tid))() |>
+  filter(studyName == "Ithaca 2022") |>
+  pull(studyDbId) |>
+  brapi_study_data(con = con)
+```
+
+Choose QBMS for interactive exploration in the console. Choose brapiR2 for
+reproducible scripts, pipelines, or when you need genotypic data and
+caching. Many users use both.
+
+## References
+
+- Selby, P., Abbeloos, R., Backlund, J.E., et al., & The BrAPI Consortium
+  (2019). BrAPI — an application programming interface for plant breeding
+  applications. *Bioinformatics*, 35(20), 4147–4155.
+  <https://doi.org/10.1093/bioinformatics/btz190>
