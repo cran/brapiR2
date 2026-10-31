@@ -10,7 +10,8 @@ brapi_cache_enable(con, dir = NULL, ttl = 3600)
 \item{con}{A \code{\link[=brapi_connection]{brapi_connection()}} object.}
 
 \item{dir}{Character. Directory to store cached responses.
-Defaults to a user cache directory via \code{rappdirs::user_cache_dir()}.}
+Defaults to R's per-user cache directory for brapiR2,
+\code{tools::R_user_dir("brapiR2", "cache")}.}
 
 \item{ttl}{Numeric. Time-to-live for cached entries in seconds.
 Default 3600 (1 hour).}
@@ -20,12 +21,13 @@ A new \code{brapi_con} object with caching configured.
 }
 \description{
 Returns a new connection object with caching enabled. Cached responses
-are stored as JSON files in the specified directory, keyed by URL and
-query parameters.
+are stored as JSON files in the specified directory, keyed by URL, query
+parameters and (hashed) token, so connections with different credentials
+never share an entry.
 }
 \examples{
 con <- brapi_connection("https://test-server.brapi.org")
-con <- brapi_cache_enable(con, dir = tempdir(), ttl = 7200)
+con <- brapi_cache_enable(con, dir = tempfile("brapi_cache_"), ttl = 7200)
 con
 
 }

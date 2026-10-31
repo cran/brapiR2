@@ -45,7 +45,7 @@ studies
 
 ## ----pheno, eval = server_up--------------------------------------------------
 # Get analysis-ready wide format: one row per plot, one column per trait
-data <- brapi_study_data(con, studies$studyDbId[1])
+data <- brapi_study_data(con, studies$studyDbId[1], fallback = TRUE)
 data
 
 ## ----pheno-summary, eval = server_up------------------------------------------
@@ -95,20 +95,20 @@ dim(dosage)
 dosage[seq_len(min(3, nrow(dosage))), seq_len(min(5, ncol(dosage)))]
 
 ## ----auth, eval = FALSE-------------------------------------------------------
-# # Username/password login - used by Breedbase, BMS, and Germinate
+# # Username/password login (tested on Breedbase)
 # con <- brapi_connection("https://my-breedbase.org")
 # con <- brapi_login(con, "username", "password")
 # 
-# # OAuth 2.0 (EBS and similar)
+# # OAuth 2.0 client-credentials grant (not yet tested against a
+# # production BrAPI server)
 # con <- brapi_login_oauth2(
 #   con,
 #   client_id     = "my_id",
 #   client_secret = "my_secret",
-#   authorize_url = "https://auth.example.org/authorize",
 #   access_url    = "https://auth.example.org/token"
 # )
 # 
-# # Bearer token (GIGWA, custom servers)
+# # Bearer token (any server that issues one)
 # con <- brapi_set_token(con, Sys.getenv("BRAPI_TOKEN"))
 
 ## ----renviron, eval = FALSE---------------------------------------------------
@@ -150,7 +150,9 @@ future::plan(future::multisession, workers = 2)
 # Fetch study data from multiple studies in parallel (all studies on the
 # server, not just the one attached to the trial filtered above)
 study_ids <- brapi_studies(con)$studyDbId
-all_data <- brapi_fetch_parallel(perf_con, brapi_study_data, study_ids)
+all_data <- brapi_fetch_parallel(
+  perf_con, brapi_study_data, study_ids, fallback = TRUE
+)
 all_data
 
 ## ----cleanup-parallel, eval = server_up && requireNamespace("future", quietly = TRUE)----

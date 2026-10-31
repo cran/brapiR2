@@ -1,7 +1,7 @@
 Package: brapiR2
 Title: A Tidyverse-Native Client for the 'BrAPI' v2 (Breeding API)
         Specification
-Version: 0.2.0
+Version: 0.2.1
 Authors@R: c(
     person("Joash Joshua", "Ayo", , "joashjoshua789@gmail.com",
            role = c("aut", "cre", "cph"),
@@ -35,15 +35,15 @@ Imports: cli (>= 3.6.0), dplyr (>= 1.1.0), glue (>= 1.6.0), httr2 (>=
         1.0.0), jsonlite (>= 1.8.0), purrr (>= 1.0.0), rlang (>=
         1.1.0), stats, tibble (>= 3.2.0), tidyr (>= 1.3.0), tidyselect
         (>= 1.2.0), utils
-Suggests: furrr (>= 0.3.0), future (>= 1.33.0), httptest2, keyring,
-        knitr, rappdirs, rmarkdown, testthat (>= 3.0.0), withr
+Suggests: furrr (>= 0.3.0), future (>= 1.33.0), keyring, knitr,
+        rmarkdown, testthat (>= 3.0.0), withr
 Config/testthat/edition: 3
 VignetteBuilder: knitr
 Config/Needs/website: rmarkdown, AlphaSimR, AGHmatrix, BGLR, rrBLUP,
         sommer, metan, lme4
 Config/roxygen2/version: 8.1.0
 NeedsCompilation: no
-Packaged: 2026-09-24 12:09:47 UTC; Joshua
+Packaged: 2026-10-31 17:02:14 UTC; Joshua
 Author: Joash Joshua Ayo [aut, cre, cph] (ORCID:
     <https://orcid.org/0009-0007-1642-0172>),
   David Waring [rev] (David reviewed the package (v. 0.1.0) for rOpenSci,
@@ -53,4 +53,4 @@ Author: Joash Joshua Ayo [aut, cre, cph] (ORCID:
     <https://github.com/ropensci/software-review/issues/792>)
 Maintainer: Joash Joshua Ayo <joashjoshua789@gmail.com>
 Repository: CRAN
-Date/Publication: 2026-10-05 16:30:32 UTC
+Date/Publication: 2026-10-31 17:20:02 UTC

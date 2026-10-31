@@ -6,6 +6,12 @@
 <!-- badges: start -->
 
 [![R-CMD-check](https://github.com/ropensci/brapiR2/actions/workflows/R-CMD-check.yaml/badge.svg)](https://github.com/ropensci/brapiR2/actions/workflows/R-CMD-check.yaml)
+[![Codecov test
+coverage](https://codecov.io/gh/ropensci/brapiR2/graph/badge.svg)](https://app.codecov.io/gh/ropensci/brapiR2)
+[![CRAN
+status](https://www.r-pkg.org/badges/version/brapiR2)](https://CRAN.R-project.org/package=brapiR2)
+[![R-universe
+version](https://ropensci.r-universe.dev/brapiR2/badges/version)](https://ropensci.r-universe.dev/brapiR2)
 [![Lifecycle:
 experimental](https://img.shields.io/badge/lifecycle-experimental-orange.svg)](https://lifecycle.r-lib.org/articles/stages.html#experimental)
 [![Status at rOpenSci Software Peer
@@ -47,16 +53,16 @@ that endpoint accepts.
 
 ## Tested against
 
-brapiR2 is developed against the public BrAPI test server and exercised
-against every publicly reachable BrAPI v2 server I could find. As of
-September 2026 that is eight servers across three implementations: the
-reference server, six Breedbase deployments (Cassavabase,
-Sweetpotatobase, Coffeabase, Citrusgreening, and the T3 oat and wheat
-sandboxes), and USDA-GRIN, which runs GRIN-Global. Of 80 endpoint
-probes, 62 succeeded. The failures are server-side rather than
-client-side - timeouts on the largest Breedbase instances, `HTTP 500` on
-two of them, and endpoints GRIN-Global does not implement - and each one
-is recorded in
+brapiR2 is developed against the public BrAPI test server. I also probed
+every publicly reachable BrAPI v2 server I could find, with one request
+to each of ten endpoints. As of 19 September 2026 that is eight servers
+across three implementations: the reference server, six Breedbase
+deployments (Cassavabase, Sweetpotatobase, Coffeabase, Citrusgreening,
+and the T3 oat and wheat sandboxes), and USDA-GRIN, which runs
+GRIN-Global. 62 of the 80 probes returned a successful response. The
+failures are server-side rather than client-side - timeouts on the
+largest Breedbase instances, `HTTP 500` on two of them, and endpoints
+GRIN-Global does not implement - and each one is recorded in
 [dev/SERVERS.md](https://github.com/ropensci/brapiR2/blob/main/dev/SERVERS.md),
 alongside the script that produced them.
 
@@ -67,7 +73,14 @@ welcome in the issue tracker.
 
 ## Installation
 
-Install from rOpenSci's R-universe:
+Install the released version from CRAN:
+
+``` r
+install.packages("brapiR2")
+```
+
+Or from rOpenSci's R-universe, which builds the latest version on
+GitHub:
 
 ``` r
 install.packages(
@@ -108,10 +121,10 @@ brapi_trials(con) |>
   head()
 
 # 3. Get phenotypic data in analysis-ready wide format
-data <- brapi_study_data(con, "study_01")
+data <- brapi_study_data(con, "study1")
 
 # 4. Get genotypic data as a dosage matrix for GS
-dosage <- brapi_get_dosage_matrix(con, "variantset_01")
+dosage <- brapi_get_dosage_matrix(con, "variantset1")
 
 # 5. Parallel fetch across multiple studies - set the backend yourself;
 #    brapi_fetch_parallel() uses whatever plan is active rather than
@@ -120,7 +133,7 @@ future::plan(future::multisession, workers = 4)
 all_data <- brapi_fetch_parallel(
   con,
   brapi_study_data,
-  ids = c("study_01", "study_02", "study_03")
+  ids = c("study1", "study2", "study3")
 )
 future::plan(future::sequential) # shut the workers back down when done
 ```
@@ -132,12 +145,12 @@ future::plan(future::sequential) # shut the workers back down when done
 con <- brapi_connection("https://my-breedbase.org")
 con <- brapi_login(con, "username", "password")
 
-# OAuth 2.0 (EBS and similar)
+# OAuth 2.0 client-credentials grant (not yet tested against a
+# production BrAPI server)
 con <- brapi_login_oauth2(
   con,
   client_id = "my_id",
   client_secret = "my_secret",
-  authorize_url = "https://auth.example.org/authorize",
   access_url = "https://auth.example.org/token"
 )
 
@@ -147,8 +160,12 @@ con <- brapi_set_token(con, "my_existing_token")
 
 ## Pipe-Friendly Design
 
-Every function takes a connection object as its first argument and
-returns a tibble, making it natural to chain with dplyr:
+Every data-retrieval function takes a connection as its first argument
+and returns a tibble, so it chains naturally with dplyr. The exceptions
+are deliberate: `brapi_get_dosage_matrix()` returns a numeric samples ×
+markers matrix for genomic-selection packages, `brapi_ping()` returns
+`TRUE` or `FALSE`, and the connection and authentication functions
+return an updated connection object.
 
 ``` r
 con <- brapi_connection("https://my-breedbase.org", token = "my_token")
@@ -185,9 +202,9 @@ brapi_get_marker_map(con, variantSetDbId = "my_variantset") |>
 | Design | Stateless, functional, pipeable | Stateful, menu-driven |
 | BrAPI v2 coverage | 32/37 entities, all 4 modules, read-only | See QBMS's own documentation |
 | Genotyping support | Native variants, callsets, dosage matrix | Via GIGWA wrapper |
-| Return type | Always tibbles | Mixed lists/dataframes |
+| Return type | Tibbles (a matrix for dosages) | Mixed lists/dataframes |
 | Auth | Unified token/OAuth2 | Engine-specific functions |
-| Caching | Built-in response caching | Limited |
+| Caching | Built-in response caching | See QBMS's own documentation |
 
 **brapiR2 complements
 [QBMS](https://cran.r-project.org/package=QBMS)** - use QBMS for
@@ -199,8 +216,8 @@ custom tooling.
 [brapir-v2](https://github.com/mverouden/brapir-v2) is another R client
 that, like brapiR2, targets the BrAPI v2 specification directly rather
 than v1. Its own README describes it as still under development, and the
-repository has had no commits in roughly four years (last pushed April
-2022) - it does not appear to be actively maintained.
+repository has had no commits since April 2022 - it does not appear to
+be actively maintained.
 
 [BrAPI.R](https://github.com/TriticeaeToolbox/BrAPI.R) (David Waring,
 Cornell) is a different kind of tool entirely, and complementary rather

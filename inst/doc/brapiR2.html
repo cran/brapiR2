@@ -457,19 +457,22 @@ value in another. That is the right shape for transport and the wrong
 shape for analysis: nearly every R modelling function expects one row
 per experimental unit and one column per variable.</p>
 <p><code>brapi_study_data()</code> does that reshaping for you. It
-fetches the study’s observations, pivots traits into columns, and joins
-the germplasm and plot identifiers you need to link phenotypes back to
-genotypes or to a field layout. Doing this by hand is not difficult, but
-it is fiddly in ways that are easy to get subtly wrong, particularly
-when an observation unit carries more than one value for the same trait.
-Repeated measurements are kept as list-columns rather than silently
-averaged or dropped, which is why the summary below unnests before
-taking means. The function also falls back to fetching all observations
-and filtering client-side when a server does not honour the
-<code>studyDbId</code> filter, so it returns data on servers where a
-direct <code>brapi_observations()</code> call would come back empty.</p>
+fetches the study’s observations, pivots traits into columns, and keeps
+the observation unit, germplasm and study identifiers you need to link
+phenotypes back to genotypes; join
+<code>brapi_observation_units()</code> on
+<code>observationUnitDbId</code> for the plot’s position in the field.
+Doing this by hand is not difficult, but it is fiddly in ways that are
+easy to get subtly wrong, particularly when an observation unit carries
+more than one value for the same trait. Repeated measurements are kept
+as list-columns rather than silently averaged or dropped, which is why
+the summary below unnests before taking means. Some servers, this test
+server among them, do not honour the <code>studyDbId</code> filter on
+<code>/observations</code>; <code>fallback = TRUE</code> then fetches
+all observations and filters them client-side. It is off by default
+because on a production server that can be a very large download.</p>
 <div class="sourceCode" id="cb4"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb4-1"><a href="#cb4-1" tabindex="-1"></a><span class="co"># Get analysis-ready wide format: one row per plot, one column per trait</span></span>
-<span id="cb4-2"><a href="#cb4-2" tabindex="-1"></a>data <span class="ot">&lt;-</span> <span class="fu">brapi_study_data</span>(con, studies<span class="sc">$</span>studyDbId[<span class="dv">1</span>])</span>
+<span id="cb4-2"><a href="#cb4-2" tabindex="-1"></a>data <span class="ot">&lt;-</span> <span class="fu">brapi_study_data</span>(con, studies<span class="sc">$</span>studyDbId[<span class="dv">1</span>], <span class="at">fallback =</span> <span class="cn">TRUE</span>)</span>
 <span id="cb4-3"><a href="#cb4-3" tabindex="-1"></a>data</span>
 <span id="cb4-4"><a href="#cb4-4" tabindex="-1"></a><span class="co">#&gt; # A tibble: 2 × 6</span></span>
 <span id="cb4-5"><a href="#cb4-5" tabindex="-1"></a><span class="co">#&gt;   observationUnitDbId observationUnitName germplasmDbId germplasmName  studyDbId</span></span>
@@ -556,7 +559,7 @@ than one map. <code>brapi_get_marker_map()</code> now reads from there
 instead:</p>
 <div class="sourceCode" id="cb7"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb7-1"><a href="#cb7-1" tabindex="-1"></a><span class="co"># Positions for every variant in the set, wherever they have been placed</span></span>
 <span id="cb7-2"><a href="#cb7-2" tabindex="-1"></a>markers <span class="ot">&lt;-</span> <span class="fu">brapi_get_marker_map</span>(con, <span class="at">variantSetDbId =</span> vs_id)</span>
-<span id="cb7-3"><a href="#cb7-3" tabindex="-1"></a><span class="co">#&gt; ℹ Async search started (ID: bfdd7866-2de3-4cc7-8a04-b93d1b8f00ee). Polling...</span></span>
+<span id="cb7-3"><a href="#cb7-3" tabindex="-1"></a><span class="co">#&gt; ℹ Async search started (ID: 021369d2-e0ad-4c0a-8186-3033dccb9200). Polling...</span></span>
 <span id="cb7-4"><a href="#cb7-4" tabindex="-1"></a><span class="co">#&gt; Warning: 14 of 20 variants in &quot;variantset1&quot; have no marker position record; returning</span></span>
 <span id="cb7-5"><a href="#cb7-5" tabindex="-1"></a><span class="co">#&gt; positions for the remaining 6.</span></span>
 <span id="cb7-6"><a href="#cb7-6" tabindex="-1"></a>markers</span>
@@ -610,20 +613,20 @@ server the two fields agree.</p>
 <p>Most production BrAPI servers require authentication. These calls
 need your own server and credentials, so they are shown but not run
 here.</p>
-<div class="sourceCode" id="cb11"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb11-1"><a href="#cb11-1" tabindex="-1"></a><span class="co"># Username/password login - used by Breedbase, BMS, and Germinate</span></span>
+<div class="sourceCode" id="cb11"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb11-1"><a href="#cb11-1" tabindex="-1"></a><span class="co"># Username/password login (tested on Breedbase)</span></span>
 <span id="cb11-2"><a href="#cb11-2" tabindex="-1"></a>con <span class="ot">&lt;-</span> <span class="fu">brapi_connection</span>(<span class="st">&quot;https://my-breedbase.org&quot;</span>)</span>
 <span id="cb11-3"><a href="#cb11-3" tabindex="-1"></a>con <span class="ot">&lt;-</span> <span class="fu">brapi_login</span>(con, <span class="st">&quot;username&quot;</span>, <span class="st">&quot;password&quot;</span>)</span>
 <span id="cb11-4"><a href="#cb11-4" tabindex="-1"></a></span>
-<span id="cb11-5"><a href="#cb11-5" tabindex="-1"></a><span class="co"># OAuth 2.0 (EBS and similar)</span></span>
-<span id="cb11-6"><a href="#cb11-6" tabindex="-1"></a>con <span class="ot">&lt;-</span> <span class="fu">brapi_login_oauth2</span>(</span>
-<span id="cb11-7"><a href="#cb11-7" tabindex="-1"></a>  con,</span>
-<span id="cb11-8"><a href="#cb11-8" tabindex="-1"></a>  <span class="at">client_id     =</span> <span class="st">&quot;my_id&quot;</span>,</span>
-<span id="cb11-9"><a href="#cb11-9" tabindex="-1"></a>  <span class="at">client_secret =</span> <span class="st">&quot;my_secret&quot;</span>,</span>
-<span id="cb11-10"><a href="#cb11-10" tabindex="-1"></a>  <span class="at">authorize_url =</span> <span class="st">&quot;https://auth.example.org/authorize&quot;</span>,</span>
+<span id="cb11-5"><a href="#cb11-5" tabindex="-1"></a><span class="co"># OAuth 2.0 client-credentials grant (not yet tested against a</span></span>
+<span id="cb11-6"><a href="#cb11-6" tabindex="-1"></a><span class="co"># production BrAPI server)</span></span>
+<span id="cb11-7"><a href="#cb11-7" tabindex="-1"></a>con <span class="ot">&lt;-</span> <span class="fu">brapi_login_oauth2</span>(</span>
+<span id="cb11-8"><a href="#cb11-8" tabindex="-1"></a>  con,</span>
+<span id="cb11-9"><a href="#cb11-9" tabindex="-1"></a>  <span class="at">client_id     =</span> <span class="st">&quot;my_id&quot;</span>,</span>
+<span id="cb11-10"><a href="#cb11-10" tabindex="-1"></a>  <span class="at">client_secret =</span> <span class="st">&quot;my_secret&quot;</span>,</span>
 <span id="cb11-11"><a href="#cb11-11" tabindex="-1"></a>  <span class="at">access_url    =</span> <span class="st">&quot;https://auth.example.org/token&quot;</span></span>
 <span id="cb11-12"><a href="#cb11-12" tabindex="-1"></a>)</span>
 <span id="cb11-13"><a href="#cb11-13" tabindex="-1"></a></span>
-<span id="cb11-14"><a href="#cb11-14" tabindex="-1"></a><span class="co"># Bearer token (GIGWA, custom servers)</span></span>
+<span id="cb11-14"><a href="#cb11-14" tabindex="-1"></a><span class="co"># Bearer token (any server that issues one)</span></span>
 <span id="cb11-15"><a href="#cb11-15" tabindex="-1"></a>con <span class="ot">&lt;-</span> <span class="fu">brapi_set_token</span>(con, <span class="fu">Sys.getenv</span>(<span class="st">&quot;BRAPI_TOKEN&quot;</span>))</span></code></pre></div>
 <div id="credential-handling" class="section level3">
 <h3>Handling Credentials Safely</h3>
@@ -687,17 +690,19 @@ sharing a session or reporting a problem.</p>
 lot of it at once. Both run against the public test server here; neither
 needs authentication.</p>
 <p><strong>Caching</strong> stores each response on disk under a key
-built from the URL and query parameters, and returns it without a
-network call for as long as the TTL lasts. Reach for it when you are
-developing a script against a slow or distant server and re-running the
-same calls, or when a knitted report would otherwise hit the server once
-per render. It is off by default, per connection, and never shared
-between connections.</p>
+built from the URL, query parameters and a hash of the connection’s
+token, and returns it without a network call for as long as the TTL
+lasts. Reach for it when you are developing a script against a slow or
+distant server and re-running the same calls, or when a knitted report
+would otherwise hit the server once per render. It is off by default and
+enabled per connection. Connections that share a cache directory share
+entries only if they make the same request with the same
+credentials.</p>
 <div class="sourceCode" id="cb15"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb15-1"><a href="#cb15-1" tabindex="-1"></a><span class="co"># Enable caching — repeated calls within the TTL return instantly</span></span>
 <span id="cb15-2"><a href="#cb15-2" tabindex="-1"></a>cache_dir <span class="ot">&lt;-</span> <span class="fu">tempfile</span>(<span class="st">&quot;brapi_cache_&quot;</span>)</span>
 <span id="cb15-3"><a href="#cb15-3" tabindex="-1"></a><span class="fu">dir.create</span>(cache_dir)</span>
 <span id="cb15-4"><a href="#cb15-4" tabindex="-1"></a>perf_con <span class="ot">&lt;-</span> <span class="fu">brapi_cache_enable</span>(con, <span class="at">ttl =</span> <span class="dv">3600</span>, <span class="at">dir =</span> cache_dir)</span>
-<span id="cb15-5"><a href="#cb15-5" tabindex="-1"></a><span class="co">#&gt; ✔ Caching enabled at &#39;C:\Users\Joshua\AppData\Local\Temp\RtmpAZ0xDE\brapi_cache_9dcf16612&#39; (TTL: 3600s)</span></span>
+<span id="cb15-5"><a href="#cb15-5" tabindex="-1"></a><span class="co">#&gt; ✔ Caching enabled at &#39;C:\Users\Joshua\AppData\Local\Temp\RtmpK0093l\brapi_cache_5a744f9c5b46&#39; (TTL: 3600s)</span></span>
 <span id="cb15-6"><a href="#cb15-6" tabindex="-1"></a></span>
 <span id="cb15-7"><a href="#cb15-7" tabindex="-1"></a><span class="co"># First call: hits the server</span></span>
 <span id="cb15-8"><a href="#cb15-8" tabindex="-1"></a><span class="fu">invisible</span>(<span class="fu">brapi_programs</span>(perf_con))</span>
@@ -732,20 +737,22 @@ package does not set one for you:</p>
 <span id="cb16-3"><a href="#cb16-3" tabindex="-1"></a><span class="co"># Fetch study data from multiple studies in parallel (all studies on the</span></span>
 <span id="cb16-4"><a href="#cb16-4" tabindex="-1"></a><span class="co"># server, not just the one attached to the trial filtered above)</span></span>
 <span id="cb16-5"><a href="#cb16-5" tabindex="-1"></a>study_ids <span class="ot">&lt;-</span> <span class="fu">brapi_studies</span>(con)<span class="sc">$</span>studyDbId</span>
-<span id="cb16-6"><a href="#cb16-6" tabindex="-1"></a>all_data <span class="ot">&lt;-</span> <span class="fu">brapi_fetch_parallel</span>(perf_con, brapi_study_data, study_ids)</span>
-<span id="cb16-7"><a href="#cb16-7" tabindex="-1"></a><span class="co">#&gt; ℹ Fetching 3 items...</span></span>
-<span id="cb16-8"><a href="#cb16-8" tabindex="-1"></a><span class="co">#&gt; ℹ Using cached response for &#39;/observations&#39;.</span></span>
-<span id="cb16-9"><a href="#cb16-9" tabindex="-1"></a><span class="co">#&gt; ! No observations found for study &quot;study2&quot;.</span></span>
-<span id="cb16-10"><a href="#cb16-10" tabindex="-1"></a><span class="co">#&gt; ℹ Using cached response for &#39;/observations&#39;.</span></span>
-<span id="cb16-11"><a href="#cb16-11" tabindex="-1"></a><span class="co">#&gt; ! No observations found for study &quot;study3&quot;.</span></span>
-<span id="cb16-12"><a href="#cb16-12" tabindex="-1"></a><span class="co">#&gt; ✔ Fetched 2 rows from 3 sources.</span></span>
-<span id="cb16-13"><a href="#cb16-13" tabindex="-1"></a>all_data</span>
-<span id="cb16-14"><a href="#cb16-14" tabindex="-1"></a><span class="co">#&gt; # A tibble: 2 × 6</span></span>
-<span id="cb16-15"><a href="#cb16-15" tabindex="-1"></a><span class="co">#&gt;   observationUnitDbId observationUnitName germplasmDbId germplasmName  studyDbId</span></span>
-<span id="cb16-16"><a href="#cb16-16" tabindex="-1"></a><span class="co">#&gt;   &lt;chr&gt;               &lt;chr&gt;               &lt;chr&gt;         &lt;chr&gt;          &lt;chr&gt;    </span></span>
-<span id="cb16-17"><a href="#cb16-17" tabindex="-1"></a><span class="co">#&gt; 1 observation_unit1   Plot 1              germplasm1    Tomatillo Fan… study1   </span></span>
-<span id="cb16-18"><a href="#cb16-18" tabindex="-1"></a><span class="co">#&gt; 2 observation_unit2   Plot 2              germplasm2    Tomatillo Fan… study1   </span></span>
-<span id="cb16-19"><a href="#cb16-19" tabindex="-1"></a><span class="co">#&gt; # ℹ 1 more variable: `Corn Stalk Height` &lt;list&gt;</span></span></code></pre></div>
+<span id="cb16-6"><a href="#cb16-6" tabindex="-1"></a>all_data <span class="ot">&lt;-</span> <span class="fu">brapi_fetch_parallel</span>(</span>
+<span id="cb16-7"><a href="#cb16-7" tabindex="-1"></a>  perf_con, brapi_study_data, study_ids, <span class="at">fallback =</span> <span class="cn">TRUE</span></span>
+<span id="cb16-8"><a href="#cb16-8" tabindex="-1"></a>)</span>
+<span id="cb16-9"><a href="#cb16-9" tabindex="-1"></a><span class="co">#&gt; ℹ Fetching 3 items...</span></span>
+<span id="cb16-10"><a href="#cb16-10" tabindex="-1"></a><span class="co">#&gt; ! No observations found for study &quot;study2&quot;.</span></span>
+<span id="cb16-11"><a href="#cb16-11" tabindex="-1"></a><span class="co">#&gt; ℹ Using cached response for &#39;/observations&#39;.</span></span>
+<span id="cb16-12"><a href="#cb16-12" tabindex="-1"></a><span class="co">#&gt; </span></span>
+<span id="cb16-13"><a href="#cb16-13" tabindex="-1"></a><span class="co">#&gt; ! No observations found for study &quot;study3&quot;.</span></span>
+<span id="cb16-14"><a href="#cb16-14" tabindex="-1"></a><span class="co">#&gt; ✔ Fetched 2 rows from 3 of 3 IDs.</span></span>
+<span id="cb16-15"><a href="#cb16-15" tabindex="-1"></a>all_data</span>
+<span id="cb16-16"><a href="#cb16-16" tabindex="-1"></a><span class="co">#&gt; # A tibble: 2 × 6</span></span>
+<span id="cb16-17"><a href="#cb16-17" tabindex="-1"></a><span class="co">#&gt;   observationUnitDbId observationUnitName germplasmDbId germplasmName  studyDbId</span></span>
+<span id="cb16-18"><a href="#cb16-18" tabindex="-1"></a><span class="co">#&gt;   &lt;chr&gt;               &lt;chr&gt;               &lt;chr&gt;         &lt;chr&gt;          &lt;chr&gt;    </span></span>
+<span id="cb16-19"><a href="#cb16-19" tabindex="-1"></a><span class="co">#&gt; 1 observation_unit1   Plot 1              germplasm1    Tomatillo Fan… study1   </span></span>
+<span id="cb16-20"><a href="#cb16-20" tabindex="-1"></a><span class="co">#&gt; 2 observation_unit2   Plot 2              germplasm2    Tomatillo Fan… study1   </span></span>
+<span id="cb16-21"><a href="#cb16-21" tabindex="-1"></a><span class="co">#&gt; # ℹ 1 more variable: `Corn Stalk Height` &lt;list&gt;</span></span></code></pre></div>
 <p>As above, this server’s studies have no observations, so
 <code>all_data</code> is an empty tibble here too — the call itself, and
 the parallel-fetch mechanics, are real.</p>
@@ -792,7 +799,7 @@ tools designed for different workflows</strong>.</p>
 </tr>
 <tr class="even">
 <td>Caching</td>
-<td>No</td>
+<td>See QBMS’s own documentation</td>
 <td>Yes, disk-based with TTL</td>
 </tr>
 <tr class="odd">

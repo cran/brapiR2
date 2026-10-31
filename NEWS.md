@@ -1,6 +1,189 @@
+# brapiR2 0.2.1
+
+## Bug fixes
+
+* `brapi_ping()` now returns `TRUE` only when `/serverinfo` answers with a
+  successful JSON response, and attaches the HTTP status as the `"status"`
+  attribute. Live-server tests skip with that status when the test server
+  is down, instead of failing (#42).
+
+* `brapi_allele_matrix()` and `brapi_get_dosage_matrix()` now page
+  `/allelematrix` in both dimensions with the v2.1 parameters
+  `dimensionVariantPage` and `dimensionCallSetPage`. They used to send a
+  `callSetPage` parameter the specification does not define, so a
+  spec-compliant server repeated the first page of call sets and later
+  pages of variants were never fetched (#7).
+
+* `brapi_post_search()` and the `brapi_search_*()` functions now return
+  every page of a search result, whether the server answers immediately or
+  after an asynchronous (HTTP 202) search. They used to return only the
+  first `page_size` records. `brapi_get_marker_map(variantSetDbId = )` no
+  longer reports variants as having no position when their positions were
+  on a later page (#8).
+
+* `brapi_allele_matrix()`, `brapi_get_dosage_matrix()`, `brapi_server_info()`
+  and `brapi_endpoints()` now report HTTP errors with the server's own
+  message, like every other function. A 401 used to come back as an empty
+  tibble, and an HTML error page as an httr2 content-type error (#9).
+
+* `brapi_get_dosage_matrix()` now asks the server for expanded homozygotes,
+  its `sep` and its `unknown_string`, and decodes calls more strictly. A call
+  with any missing allele (`"./1"`) is `NA` rather than a dosage, a
+  collapsed homozygote (`"1"`) is expanded instead of becoming `NA`, and
+  nucleotide calls (`"A/T"`) are an error rather than being counted as
+  alternate alleles. The matrix is built directly from the allele matrix,
+  without a long-format pivot (#10).
+
+* Cached responses keep full numeric precision. They were written with
+  jsonlite's default of four decimal places, so a cached call could return
+  different values from a fresh one; the parser's fallback path rounded the
+  same way. Cache entries are now written to a temporary file and renamed
+  into place, so a parallel worker never reads a half-written entry (#11).
+
+* The cache key now includes a hash of the connection's token, so a
+  response fetched with one token is never served to a connection with a
+  different token or none. `brapi_cache_clear()` removes only brapiR2's own
+  cache files rather than everything in the directory, and its examples no
+  longer point the cache at `tempdir()` (#12).
+
+* `brapi_cache_enable()` now defaults to `tools::R_user_dir("brapiR2",
+  "cache")`, R's standard per-user cache location, instead of
+  `rappdirs::user_cache_dir()`, and `rappdirs` is no longer a suggested
+  package. The test for the default directory no longer writes to the
+  user's home directory (#13).
+
+* `brapi_study_data()` no longer drops repeated measurements that happen to
+  share a value: duplicates are now identified by `observationDbId`. It also
+  no longer fetches every observation on the server when the filtered
+  request comes back empty, which is the normal answer for a study with no
+  data. That fallback, for servers that ignore the `studyDbId` filter such
+  as the public BrAPI test server, is now opt-in with `fallback = TRUE`, and
+  the empty-study message says so. Code that relied on the fallback needs
+  to set it (#14).
+
+* `brapi_login_oauth2()` now sends its client-credentials token request
+  form-encoded, as RFC 6749 requires, rather than as JSON, which most OAuth
+  servers reject. The unused `authorize_url` argument is optional and
+  deprecated; supplying it gives a warning. The docs and README no longer
+  describe an authorization-code flow or imply EBS has been tested, and the
+  example no longer posts to the test server's legacy `/token` endpoint,
+  which is not an OAuth server (#15).
+
+* Paginated requests now work out the page count from `totalCount` and
+  `pageSize` when a server omits `totalPages`, instead of stopping after
+  the first page. When a server ignores the `page` parameter and serves the
+  same page again, `brapi_get()` stops with a warning instead of repeating
+  those records for every remaining page, and doesn't cache the result.
+  `max_pages` is validated (#16).
+
+* A field whose JSON type differs between records, such as a plot number
+  that is `1` in one and `"2A"` in another, no longer changes the shape of
+  the result. The parser used to fall back to `jsonlite::fromJSON(flatten =
+  TRUE)`, which turned nested objects into dotted columns (`geo` became
+  `geo.type`); now such a column becomes character, or a list-column if any
+  record holds a list (#17).
+
+* Arguments are checked before any request is made. By-ID functions such
+  as `brapi_study()` need a single non-empty ID (a whole number is
+  accepted) and percent-encode it, so an ID with a space or `?` no longer
+  breaks the URL; `NULL` used to request the API root and a vector a
+  nonsense path. An ID containing `/` is refused, since it can't be sent
+  in a path. `NULL` filters passed through `...` are dropped, a vector
+  filter gives an error naming the parameter instead of an internal one,
+  `brapi_connection()` validates `token`, `version`, `page_size` and
+  `timeout`, and `brapi_study_data()` says when records have no value
+  field. HTTP errors now name the server as well as the endpoint (#18).
+
+* Logical query parameters, such as `includeParents = TRUE`, are now sent
+  as `true`/`false` rather than `TRUE`/`FALSE`. In search request bodies
+  only the plural array filters (`germplasmDbIds`, ...) are sent as JSON
+  arrays; string fields the specification defines as single values, such as
+  `sepUnphased`, `unknownString` and `observationTimeStampRangeStart`, are
+  no longer wrapped in an array (#19).
+
+* `brapi_ping()` uses a timeout of at most 10 seconds and doesn't retry, so
+  an unreachable server is reported in under a second instead of after
+  retries (about 5 seconds per call with httr2 1.0.0, and every example
+  pings first). A server that answers `/serverinfo` with 401 or 403 is now
+  reported as reachable but needing authentication, rather than as down
+  (#20).
+
+* `brapi_fetch_parallel()` now records which IDs failed: the result carries
+  a `"failed"` attribute listing each ID and its error, one warning names
+  them, and the summary says how many of the IDs succeeded instead of
+  claiming every source was fetched. Results whose column types differ
+  between IDs are combined (as character, or a list-column) instead of
+  aborting the whole batch (#21).
+
+* `brapi_allele_matrix()` and `brapi_get_dosage_matrix()` no longer shift
+  genotype calls when the server sends a JSON `null` for a missing call: the
+  null becomes `NA` in its own cell instead of being dropped, which moved
+  every later call in that row to the wrong call set (#67).
+
+## Documentation
+
+* The README installation section now leads with CRAN, keeping R-universe and
+  GitHub as alternatives, and adds CRAN and R-universe badges. `?brapi_get`
+  now counts 37 BrAPI v2.1 entities, and `?brapi_pedigree` and DESIGN.md no
+  longer say `brapi_germplasm_pedigree()` calls the
+  `/germplasm/{germplasmDbId}/pedigree` sub-resource (#6).
+
+* The README, vignettes and DESIGN.md no longer overstate what brapiR2
+  returns or how it was tested: they name the functions that don't return a
+  tibble, describe the server survey as one request per endpoint, use the
+  test server's real IDs (`study1`, `variantset1`) in the quick start, and no
+  longer credit untested servers with login styles (#22).
+
+* `brapi_germplasm_pedigree()`, `brapi_germplasm_progeny()`,
+  `brapi_server_info()`, `brapi_endpoints()` and `brapi_ping()` now take `...`,
+  so the query parameters their help pages list can be passed. The help
+  pages for `brapi_study_data()`, `brapi_get_dosage_matrix()`,
+  `brapi_get_marker_map()`, `brapi_login()` and `brapi_login_oauth2()` now
+  name the endpoints they call, and `?brapi_login` says `/token` is not
+  part of BrAPI v2.1 (#23).
+
+* Release housekeeping for 0.2.1: the NEWS headings use `##` throughout,
+  cran-comments.md describes an update rather than a new release,
+  CONTRIBUTING links the rOpenSci Code of Conduct and lists only the test
+  dependencies the tests use, and `dev/SERVERS.md` notes that `max_pages`
+  now fetches a single page (#24).
+
+* CONTRIBUTING now describes how the live-server tests really skip: on
+  CRAN, and whenever the test server doesn't answer `/serverinfo` with HTTP
+  200 and JSON, rather than via `skip_if_offline()` (#68).
+
+## Internal
+
+* New tests cover the error and paging paths that had none: a Breedbase
+  401 on a list endpoint, plain-text and HTML error bodies, a login that
+  fails with the server's reason, and an asynchronous search that is still
+  running on more than one poll. With the tests added alongside the fixes
+  for #7, #8, #11, #12, #16 and #42, every path listed in the issue is now
+  tested (#26).
+
+* Removed unused imports (`rlang::abort()`, `inform()`, `warn()`,
+  `dplyr::select()`, `filter()`, `purrr::map_dfr()`, `map_chr()`, `map_lgl()`,
+  `tidyr::unnest()` and the `cli_progress_*()` functions) and the unused
+  httptest2 from Suggests, fixed the remaining indentation and long-line
+  lints, and added missing words to `inst/WORDLIST` (#25).
+
+* The `.Renviron` example in the main vignette uses a `~~~` fence instead of
+  a bare ```` ``` ```` one, which goodpractice miscounted as an unmatched R
+  chunk end, failing pkgcheck with "Chunk start/end indices failed sanity
+  checks in vignette" (#42).
+
+* CI now checks the minimum supported R version (4.1), reports test
+  coverage to Codecov, and runs R CMD check weekly so the live tests notice
+  changes on the test server (#27).
+
+* The by-ID URL-encoding test no longer expects `&` to be percent-encoded
+  in a URL path. It checks that the ID's path segment has no raw space, `?`
+  or `/` and decodes back to the ID, so it passes whichever way curl treats
+  `&` (#72).
+
 # brapiR2 0.2.0
 
-### Breaking changes
+## Breaking changes
 
 * `brapi_get_marker_map()` no longer reads position data from
   `brapi_variants()` (`referenceName`/`start`, which many servers -
@@ -26,7 +209,7 @@
   `breedingMethodName`, `breedingMethodDbId`, `additionalInfo` and
   `externalReferences` (@dwaring87, ropensci/software-review#792).
 
-### Bug fixes
+## Bug fixes
 
 * `brapi_study_data()` no longer silently returns the wrong study's
   observations on servers that don't implement the `studyDbId` filter on
@@ -79,7 +262,7 @@
   single object. `/commoncropnames` returns its crop names that way, and the
   whole response came back as one row with a list-column.
 
-### Minor improvements
+## Minor improvements
 
 * Failed requests now report what the server said, not just the HTTP status.
   A 401 from a Breedbase server reads "You must login and have permission to
@@ -97,7 +280,7 @@
   Extra studies are now filtered out, and the function says how many it
   found (@dwaring87, ropensci/software-review#792).
 
-### New features
+## New features
 
 * New Genome Maps entity support (`R/genome_maps.R`): `brapi_maps()`,
   `brapi_map()`, `brapi_map_linkage_groups()`, `brapi_marker_positions()`,
@@ -116,8 +299,8 @@
   `brapi_scales()`, `brapi_methods()`, and
   `brapi_observation_variables()`.
 * brapiR2 now wraps 32 of the 37 BrAPI v2.1 entities across all four
-  modules (49 of 138 retrieval endpoints); see `DESIGN.md` for the full
-  coverage breakdown and which entities remain uncovered.
+  modules (49 of 138 retrieval endpoints); see `?brapi_coverage` for the
+  full coverage breakdown and which entities remain uncovered.
 * `brapi_connection()` gains a `path` argument for servers that do not
   serve BrAPI under `/brapi/`. GRIN-Global instances use
   `gringlobal/brapi` and were previously unreachable; Germinate and
@@ -153,7 +336,7 @@
   just the first page. The default fetches everything as before, and a
   truncated result is never cached.
 
-### Deprecated
+## Deprecated
 
 * `brapi_fetch_parallel()` no longer sets or restores a `future` plan
   itself. Per the future package's best-practices vignette, the parallel
@@ -162,7 +345,7 @@
   argument is deprecated - supplying it now emits a warning and has no
   effect.
 
-### Documentation
+## Documentation
 
 * Added `LICENSE.md` with the full MIT licence text, which was missing
   from the repository, so GitHub had no licence to detect and anyone
@@ -239,7 +422,7 @@
   example makes live requests, and CRAN runs `\donttest{}` examples on
   some check flavours.
 
-### Testing
+## Testing
 
 * Substantially expanded the mocked and live-server test suites
   alongside the features above: argument-capturing tests for every new
@@ -258,7 +441,7 @@
 
 # brapiR2 0.1.0
 
-### New features
+## New features
 
 * Initial release covering the BrAPI v2.1 specification's Core,
   Germplasm, Phenotyping, and Genotyping modules.

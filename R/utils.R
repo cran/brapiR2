@@ -5,9 +5,15 @@
 #'
 #' Tests whether the BrAPI server is reachable and responding.
 #'
+#' A ping uses a timeout of at most 10 seconds and doesn't retry, so an
+#' unreachable server is reported quickly.
+#'
 #' @inheritParams brapi_shared_params
 #'
-#' @return Logical. `TRUE` if the server responds, `FALSE` otherwise.
+#' @return Logical, invisibly. `TRUE` if `/serverinfo` answers with HTTP 200
+#'   and a JSON body, or with 401/403 (the server is up but needs
+#'   authentication); `FALSE` otherwise. The HTTP status is attached as the
+#'   `"status"` attribute (`NA` if the server could not be reached).
 #'
 #' @section BrAPI endpoint:
 #' `GET /serverinfo` - see the
@@ -25,23 +31,44 @@
 #' }
 #'
 #' @export
-brapi_ping <- function(con) {
+brapi_ping <- function(con, ...) {
   validate_con(con)
   tryCatch(
     {
       resp <- brapi_req(con, "/serverinfo") |>
+        req_url_query(!!!brapi_query_values(compact(list(...)))) |>
+        req_retry(max_tries = 1) |>
+        req_timeout(min(con$timeout %||% 10, 10)) |>
         req_perform()
       status <- resp_status(resp)
-      if (status == 200L) {
-        cli_alert_success("Server {.url {con$base_url}} is reachable.")
-        return(invisible(TRUE))
+      if (status %in% c(401L, 403L)) {
+        cli_alert_success(paste(
+          "Server {.url {con$base_url}} is reachable but requires",
+          "authentication (HTTP {status})."
+        ))
+        return(invisible(structure(TRUE, status = status)))
       }
-      cli_alert_warning("Server returned status {status}.")
-      invisible(FALSE)
+      if (status != 200L) {
+        cli_alert_warning("Server returned status {status}.")
+        return(invisible(structure(FALSE, status = status)))
+      }
+      is_json <- tryCatch(
+        {
+          resp_body_json(resp)
+          TRUE
+        },
+        error = function(e) FALSE
+      )
+      if (!is_json) {
+        cli_alert_warning("Server returned status {status} but not JSON.")
+        return(invisible(structure(FALSE, status = status)))
+      }
+      cli_alert_success("Server {.url {con$base_url}} is reachable.")
+      invisible(structure(TRUE, status = status))
     },
     error = function(e) {
       cli_alert_warning("Cannot reach {.url {con$base_url}}: {e$message}")
-      invisible(FALSE)
+      invisible(structure(FALSE, status = NA_integer_))
     }
   )
 }
@@ -75,8 +102,8 @@ brapi_ping <- function(con) {
 #' }
 #'
 #' @export
-brapi_endpoints <- function(con) {
-  brapi_server_info(con)
+brapi_endpoints <- function(con, ...) {
+  brapi_server_info(con, ...)
 }
 
 
@@ -163,6 +190,47 @@ brapi_server_message <- function(resp) {
 }
 
 
+#' Internal: Check and Encode an Identifier for a URL Path
+#'
+#' By-ID functions put the identifier into the request path, so it must be
+#' one value, and characters such as `?` and spaces must be percent-encoded
+#' or they change the URL. A `/` cannot be sent at all: httr2 (>= 1.1)
+#' decodes `%2F` back to a path separator when it adds the query string, so
+#' such an ID is refused rather than sent to the wrong endpoint. A whole
+#' number (Breedbase IDs often are) is accepted and written without
+#' scientific notation.
+#'
+#' @param id The identifier the caller passed.
+#' @param arg Character. The argument's name, for the error message.
+#' @param call The caller's environment, for the error message.
+#'
+#' @return `id` as a percent-encoded string.
+#' @keywords internal
+#' @noRd
+brapi_id_segment <- function(id, arg, call = rlang::caller_env()) {
+  if (is.numeric(id) && length(id) == 1L && !is.na(id) && id == round(id)) {
+    id <- format(id, scientific = FALSE, trim = TRUE)
+  }
+  if (!is.character(id) || length(id) != 1L || is.na(id) || !nzchar(id)) {
+    cli_abort(
+      "{.arg {arg}} must be a single non-empty string.",
+      call = call
+    )
+  }
+  if (grepl("/", id, fixed = TRUE)) {
+    cli_abort(
+      c(
+        "{.arg {arg}} {.val {id}} contains {.val /}, which can't be sent in
+          a URL path.",
+        "i" = "Filter the list endpoint by {.arg {arg}} instead."
+      ),
+      call = call
+    )
+  }
+  utils::URLencode(id, reserved = TRUE)
+}
+
+
 #' Internal: Raise an Error for a Failed BrAPI Response
 #'
 #' `brapi_req()` disables httr2's own error handling so the server's
@@ -186,6 +254,9 @@ brapi_stop_for_status <- function(resp, con = NULL, endpoint = NULL) {
   bullets <- c("BrAPI request failed (HTTP {status}).")
   if (length(msgs)) {
     bullets <- c(bullets, stats::setNames(msgs, rep("i", length(msgs))))
+  }
+  if (!is.null(con)) {
+    bullets <- c(bullets, "i" = "Server: {.url {con$base_url}}")
   }
   if (!is.null(endpoint)) {
     bullets <- c(bullets, "i" = "Endpoint: {.field {endpoint}}")

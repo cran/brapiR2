@@ -4,12 +4,14 @@
 #' Enable Response Caching
 #'
 #' Returns a new connection object with caching enabled. Cached responses
-#' are stored as JSON files in the specified directory, keyed by URL and
-#' query parameters.
+#' are stored as JSON files in the specified directory, keyed by URL, query
+#' parameters and (hashed) token, so connections with different credentials
+#' never share an entry.
 #'
 #' @inheritParams brapi_shared_params
 #' @param dir Character. Directory to store cached responses.
-#'   Defaults to a user cache directory via `rappdirs::user_cache_dir()`.
+#'   Defaults to R's per-user cache directory for brapiR2,
+#'   `tools::R_user_dir("brapiR2", "cache")`.
 #' @param ttl Numeric. Time-to-live for cached entries in seconds.
 #'   Default 3600 (1 hour).
 #'
@@ -17,7 +19,7 @@
 #'
 #' @examples
 #' con <- brapi_connection("https://test-server.brapi.org")
-#' con <- brapi_cache_enable(con, dir = tempdir(), ttl = 7200)
+#' con <- brapi_cache_enable(con, dir = tempfile("brapi_cache_"), ttl = 7200)
 #' con
 #'
 #' @export
@@ -25,13 +27,7 @@ brapi_cache_enable <- function(con, dir = NULL, ttl = 3600) {
   validate_con(con)
 
   if (is.null(dir)) {
-    if (!requireNamespace("rappdirs", quietly = TRUE)) {
-      cli_abort(c(
-        "Install {.pkg rappdirs} to use the default cache dir,",
-        "i" = "or specify {.arg dir} directly."
-      ))
-    }
-    dir <- rappdirs::user_cache_dir("brapiR2")
+    dir <- tools::R_user_dir("brapiR2", which = "cache")
   }
 
   if (!dir.exists(dir)) {
@@ -46,7 +42,9 @@ brapi_cache_enable <- function(con, dir = NULL, ttl = 3600) {
 
 #' Clear the Response Cache
 #'
-#' Removes all cached responses from the cache directory.
+#' Removes all cached responses from the cache directory. Only brapiR2's
+#' own cache files are removed; anything else in the directory is left
+#' alone.
 #'
 #' @param con A [brapi_connection()] object with caching enabled.
 #'
@@ -54,7 +52,7 @@ brapi_cache_enable <- function(con, dir = NULL, ttl = 3600) {
 #'
 #' @examples
 #' con <- brapi_connection("https://test-server.brapi.org")
-#' con <- brapi_cache_enable(con, dir = tempdir())
+#' con <- brapi_cache_enable(con, dir = tempfile("brapi_cache_"))
 #' brapi_cache_clear(con)
 #'
 #' @export
@@ -66,10 +64,16 @@ brapi_cache_clear <- function(con) {
     return(invisible(con))
   }
 
-  files <- list.files(con$cache$dir, full.names = TRUE)
+  # Cache entries (<hash>.json) and any temporary file an interrupted
+  # write left behind; nothing else.
+  files <- list.files(
+    con$cache$dir,
+    pattern = "^([0-9a-f]{32}\\.json|brapi_cache_[0-9a-f]+)$",
+    full.names = TRUE
+  )
   if (length(files) > 0) {
-    file.remove(files)
-    cli_alert_success("Cleared {length(files)} cached response(s).")
+    n <- sum(file.remove(files))
+    cli_alert_success("Cleared {n} cached response(s).")
   } else {
     cli_alert_info("Cache is already empty.")
   }
@@ -105,7 +109,11 @@ brapi_cache_clear <- function(con) {
 #'   otherwise has no effect.
 #' @param ... Additional arguments passed to `.fn`.
 #'
-#' @return A tibble with results from all IDs combined.
+#' @return A tibble with results from all IDs combined. A column whose type
+#'   differs between IDs becomes character, or a list-column. IDs whose call
+#'   failed are listed, with their error messages, in a tibble in the
+#'   `"failed"` attribute (zero rows if none failed), and a warning names
+#'   them.
 #'
 #' @examples
 #' \donttest{
@@ -140,16 +148,30 @@ brapi_fetch_parallel <- function(con, .fn, ids, .workers = NULL, ...) {
 
   cli_alert_info("Fetching {length(ids)} items...")
 
-  results <- furrr::future_map_dfr(ids, function(id) {
+  # Each worker returns its result or its error, so one failure doesn't
+  # stop the batch and the caller can see which IDs it lost.
+  outcomes <- furrr::future_map(ids, function(id) {
     tryCatch(
-      .fn(con, id, ...),
-      error = function(e) {
-        warn(glue("Failed for ID '{id}': {e$message}"))
-        tibble()
-      }
+      list(data = .fn(con, id, ...), error = NA_character_),
+      error = function(e) list(data = NULL, error = conditionMessage(e))
     )
   })
+  errors <- vapply(outcomes, `[[`, character(1), "error")
+  ok <- is.na(errors)
 
-  cli_alert_success("Fetched {nrow(results)} rows from {length(ids)} sources.")
+  # Results from different IDs may disagree on a column's type.
+  results <- bind_rows(unify_column_types(lapply(outcomes[ok], `[[`, "data")))
+  failed <- tibble(id = as.character(ids[!ok]), error = errors[!ok])
+  attr(results, "failed") <- failed
+
+  cli_alert_success(
+    "Fetched {nrow(results)} rows from {sum(ok)} of {length(ids)} IDs."
+  )
+  if (nrow(failed)) {
+    cli_warn(c(
+      "{nrow(failed)} of {length(ids)} IDs failed: {.val {failed$id}}.",
+      "i" = "See {.code attr(result, \"failed\")} for each error."
+    ))
+  }
   results
 }

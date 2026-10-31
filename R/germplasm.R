@@ -56,12 +56,13 @@ brapi_germplasm <- function(con, ...) {
 #'
 #' @export
 brapi_germplasm_detail <- function(con, germplasmDbId) {
-  brapi_get(con, glue("/germplasm/{germplasmDbId}"))
+  brapi_get(con, paste0(
+    "/germplasm/", brapi_id_segment(germplasmDbId, "germplasmDbId")
+  ))
 }
 
 
 #' Get Germplasm Pedigree
-#'
 #'
 #' The `/germplasm/{germplasmDbId}/pedigree` endpoint this function
 #' originally called was deprecated in BrAPI v2.1. It now queries
@@ -93,8 +94,9 @@ brapi_germplasm_detail <- function(con, germplasmDbId) {
 #' }
 #'
 #' @export
-brapi_germplasm_pedigree <- function(con, germplasmDbId) {
-  res <- brapi_pedigree(con, germplasmDbId = germplasmDbId)
+brapi_germplasm_pedigree <- function(con, germplasmDbId, ...) {
+  brapi_id_segment(germplasmDbId, "germplasmDbId")
+  res <- brapi_pedigree(con, germplasmDbId = germplasmDbId, ...)
   # Some servers do not apply the germplasmDbId filter, returning other
   # nodes alongside the requested one. This function promises a single
   # germplasm, so filter client-side as well.
@@ -134,11 +136,13 @@ brapi_germplasm_pedigree <- function(con, germplasmDbId) {
 #' }
 #'
 #' @export
-brapi_germplasm_progeny <- function(con, germplasmDbId) {
+brapi_germplasm_progeny <- function(con, germplasmDbId, ...) {
+  brapi_id_segment(germplasmDbId, "germplasmDbId")
   res <- brapi_pedigree(
     con,
     germplasmDbId = germplasmDbId,
-    includeProgeny = TRUE
+    includeProgeny = TRUE,
+    ...
   )
   if ("germplasmDbId" %in% names(res)) {
     res <- res[res$germplasmDbId == germplasmDbId, , drop = FALSE]
@@ -308,9 +312,8 @@ brapi_search_germplasm <- function(con,
 #'
 #' Retrieves a filtered subset of a pedigree tree via `/pedigree` - a batch
 #' endpoint for pulling pedigree records across many germplasm in one call.
-#' This is different from [brapi_germplasm_pedigree()], which retrieves one
-#' germplasm's immediate pedigree via the germplasm sub-resource
-#' (`/germplasm/{germplasmDbId}/pedigree`) and must be called once per
+#' [brapi_germplasm_pedigree()] calls this endpoint for a single germplasm
+#' and returns just that germplasm's node, so it must be called once per
 #' germplasm. Use `brapi_pedigree()` (or [brapi_search_pedigree()]) to pull
 #' pedigree records for many germplasm at once - e.g. everything in a crop,
 #' program, or family - in one or a few requests; use
@@ -345,8 +348,8 @@ brapi_search_germplasm <- function(con,
 #'   and `progeny`, when requested, are list-columns of small tibbles (one
 #'   row per relative) rather than raw nested lists or a flattened table.
 #'
-#' @seealso [brapi_germplasm_pedigree()] for one germplasm's pedigree via
-#'   the germplasm sub-resource; [brapi_search_pedigree()] for the same
+#' @seealso [brapi_germplasm_pedigree()] for one germplasm's pedigree
+#'   node; [brapi_search_pedigree()] for the same
 #'   batch retrieval via `POST`, with a fuller set of filters.
 #'
 #' @section BrAPI endpoint:
@@ -370,9 +373,9 @@ brapi_search_germplasm <- function(con,
 #'
 #' @export
 brapi_pedigree <- function(con, germplasmDbId = NULL, includeParents = NULL,
-                            includeSiblings = NULL, includeProgeny = NULL,
-                            includeFullTree = NULL, pedigreeDepth = NULL,
-                            progenyDepth = NULL, ...) {
+                           includeSiblings = NULL, includeProgeny = NULL,
+                           includeFullTree = NULL, pedigreeDepth = NULL,
+                           progenyDepth = NULL, ...) {
   query <- list(...)
   if (!is.null(germplasmDbId)) query$germplasmDbId <- germplasmDbId
   if (!is.null(includeParents)) query$includeParents <- includeParents
@@ -423,12 +426,12 @@ brapi_pedigree <- function(con, germplasmDbId = NULL, includeParents = NULL,
 #'
 #' @export
 brapi_search_pedigree <- function(con, germplasmDbIds = NULL,
-                                   includeParents = NULL,
-                                   includeSiblings = NULL,
-                                   includeProgeny = NULL,
-                                   includeFullTree = NULL,
-                                   pedigreeDepth = NULL,
-                                   progenyDepth = NULL, ...) {
+                                  includeParents = NULL,
+                                  includeSiblings = NULL,
+                                  includeProgeny = NULL,
+                                  includeFullTree = NULL,
+                                  pedigreeDepth = NULL,
+                                  progenyDepth = NULL, ...) {
   body <- compact(list(
     germplasmDbIds  = germplasmDbIds,
     includeParents  = includeParents,

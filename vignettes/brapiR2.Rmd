@@ -111,20 +111,22 @@ nearly every R modelling function expects one row per experimental unit and
 one column per variable.
 
 `brapi_study_data()` does that reshaping for you. It fetches the study's
-observations, pivots traits into columns, and joins the germplasm and plot
-identifiers you need to link phenotypes back to genotypes or to a field
-layout. Doing this by hand is not difficult, but it is fiddly in ways that
-are easy to get subtly wrong, particularly when an observation unit carries
-more than one value for the same trait. Repeated measurements are kept as
-list-columns rather than silently averaged or dropped, which is why the
-summary below unnests before taking means. The function also falls back to
-fetching all observations and filtering client-side when a server does not
-honour the `studyDbId` filter, so it returns data on servers where a direct
-`brapi_observations()` call would come back empty.
+observations, pivots traits into columns, and keeps the observation unit,
+germplasm and study identifiers you need to link phenotypes back to
+genotypes; join `brapi_observation_units()` on `observationUnitDbId` for the
+plot's position in the field. Doing this by hand is not difficult, but it is
+fiddly in ways that are easy to get subtly wrong, particularly when an
+observation unit carries more than one value for the same trait. Repeated
+measurements are kept as list-columns rather than silently averaged or
+dropped, which is why the summary below unnests before taking means. Some
+servers, this test server among them, do not honour the `studyDbId` filter
+on `/observations`; `fallback = TRUE` then fetches all observations and
+filters them client-side. It is off by default because on a production
+server that can be a very large download.
 
 ```{r pheno, eval = server_up}
 # Get analysis-ready wide format: one row per plot, one column per trait
-data <- brapi_study_data(con, studies$studyDbId[1])
+data <- brapi_study_data(con, studies$studyDbId[1], fallback = TRUE)
 data
 ```
 
@@ -237,20 +239,20 @@ Most production BrAPI servers require authentication. These calls need your
 own server and credentials, so they are shown but not run here.
 
 ```{r auth, eval = FALSE}
-# Username/password login - used by Breedbase, BMS, and Germinate
+# Username/password login (tested on Breedbase)
 con <- brapi_connection("https://my-breedbase.org")
 con <- brapi_login(con, "username", "password")
 
-# OAuth 2.0 (EBS and similar)
+# OAuth 2.0 client-credentials grant (not yet tested against a
+# production BrAPI server)
 con <- brapi_login_oauth2(
   con,
   client_id     = "my_id",
   client_secret = "my_secret",
-  authorize_url = "https://auth.example.org/authorize",
   access_url    = "https://auth.example.org/token"
 )
 
-# Bearer token (GIGWA, custom servers)
+# Bearer token (any server that issues one)
 con <- brapi_set_token(con, Sys.getenv("BRAPI_TOKEN"))
 ```
 
@@ -267,10 +269,10 @@ credentials in a `.Renviron` file (in your home directory for all
 projects, or in the project directory for that project only) as
 `NAME=value` pairs, one per line:
 
-```
+~~~
 BRAPI_TOKEN=abc123...
 BRAPI_PASSWORD=my_password
-```
+~~~
 
 R reads `.Renviron` automatically at startup, so after restarting your R
 session the values are available via `Sys.getenv()`:
@@ -322,12 +324,14 @@ Two features for when you are fetching the same data repeatedly, or a lot
 of it at once. Both run against the public test server here; neither needs
 authentication.
 
-**Caching** stores each response on disk under a key built from the URL and
-query parameters, and returns it without a network call for as long as the
-TTL lasts. Reach for it when you are developing a script against a slow or
-distant server and re-running the same calls, or when a knitted report
-would otherwise hit the server once per render. It is off by default, per
-connection, and never shared between connections.
+**Caching** stores each response on disk under a key built from the URL,
+query parameters and a hash of the connection's token, and returns it
+without a network call for as long as the TTL lasts. Reach for it when you
+are developing a script against a slow or distant server and re-running the
+same calls, or when a knitted report would otherwise hit the server once
+per render. It is off by default and enabled per connection. Connections
+that share a cache directory share entries only if they make the same
+request with the same credentials.
 
 ```{r performance, eval = server_up}
 # Enable caching — repeated calls within the TTL return instantly
@@ -360,7 +364,9 @@ future::plan(future::multisession, workers = 2)
 # Fetch study data from multiple studies in parallel (all studies on the
 # server, not just the one attached to the trial filtered above)
 study_ids <- brapi_studies(con)$studyDbId
-all_data <- brapi_fetch_parallel(perf_con, brapi_study_data, study_ids)
+all_data <- brapi_fetch_parallel(
+  perf_con, brapi_study_data, study_ids, fallback = TRUE
+)
 all_data
 ```
 
@@ -390,7 +396,7 @@ different workflows**.
 | Style | Stateful (set program → set trial → set study) | Stateless (pass `con` everywhere) |
 | Returns | Data frames | Tibbles (tidy, list-columns for nested data) |
 | Pipe-friendly | Partial | Yes, all functions follow `f(con, ...)` |
-| Caching | No | Yes, disk-based with TTL |
+| Caching | See QBMS's own documentation | Yes, disk-based with TTL |
 | Parallel fetch | No | Via the caller's own `future` backend |
 | Genotyping | Limited | Allele matrix, dosage matrix, marker map (32/37 BrAPI entities covered overall, read-only) |
 | Authentication | Yes | Yes |

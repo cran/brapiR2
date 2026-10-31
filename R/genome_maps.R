@@ -63,7 +63,7 @@ brapi_maps <- function(con, ...) {
 #'
 #' @export
 brapi_map <- function(con, mapDbId) {
-  brapi_get(con, glue("/maps/{mapDbId}"))
+  brapi_get(con, paste0("/maps/", brapi_id_segment(mapDbId, "mapDbId")))
 }
 
 
@@ -91,7 +91,9 @@ brapi_map <- function(con, mapDbId) {
 #'
 #' @export
 brapi_map_linkage_groups <- function(con, mapDbId) {
-  brapi_get(con, glue("/maps/{mapDbId}/linkagegroups"))
+  brapi_get(con, paste0(
+    "/maps/", brapi_id_segment(mapDbId, "mapDbId"), "/linkagegroups"
+  ))
 }
 
 
@@ -136,9 +138,9 @@ brapi_map_linkage_groups <- function(con, mapDbId) {
 #'
 #' @export
 brapi_marker_positions <- function(con, mapDbId = NULL, variantDbId = NULL,
-                                    linkageGroupName = NULL,
-                                    minPosition = NULL, maxPosition = NULL,
-                                    ...) {
+                                   linkageGroupName = NULL,
+                                   minPosition = NULL, maxPosition = NULL,
+                                   ...) {
   query <- list(...)
   if (!is.null(mapDbId)) query$mapDbId <- mapDbId
   if (!is.null(variantDbId)) query$variantDbId <- variantDbId
@@ -174,16 +176,19 @@ brapi_marker_positions <- function(con, mapDbId = NULL, variantDbId = NULL,
 #' \donttest{
 #' con <- brapi_connection("https://test-server.brapi.org")
 #' if (brapi_ping(con)) {
-#'   brapi_search_marker_positions(con, variantDbIds = c("variant01", "variant02"))
+#'   brapi_search_marker_positions(
+#'     con,
+#'     variantDbIds = c("variant01", "variant02")
+#'   )
 #' }
 #' }
 #'
 #' @export
 brapi_search_marker_positions <- function(con, mapDbIds = NULL,
-                                           variantDbIds = NULL,
-                                           linkageGroupNames = NULL,
-                                           minPosition = NULL,
-                                           maxPosition = NULL, ...) {
+                                          variantDbIds = NULL,
+                                          linkageGroupNames = NULL,
+                                          minPosition = NULL,
+                                          maxPosition = NULL, ...) {
   body <- compact(list(
     mapDbIds          = mapDbIds,
     variantDbIds      = variantDbIds,

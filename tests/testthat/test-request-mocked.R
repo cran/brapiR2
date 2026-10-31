@@ -122,6 +122,116 @@ test_that("brapi_get refetches when the cache entry has expired", {
   expect_identical(call_count$n, 2)
 })
 
+test_that("a cached response returns the same values as a fresh one", {
+  tmpdir <- tempfile("brapi_cache_precision_")
+  on.exit(unlink(tmpdir, recursive = TRUE), add = TRUE)
+
+  local_mocked_bindings(
+    req_perform = function(req) {
+      q <- httr2::url_parse(req$url)$query
+      expect_match(req$url, "/brapi/v2/locations\\?")
+      expect_identical(q[["page"]], "0")
+      expect_identical(q[["pageSize"]], "1000")
+      httr2::response(
+        status_code = 200L,
+        headers = list(`Content-Type` = "application/json"),
+        body = charToRaw(paste0(
+          '{"metadata": {"pagination": {"totalPages": 1}},',
+          ' "result": {"data": [{"locationDbId": "L1",',
+          ' "latitude": 12.3456789, "altitude": 2.0, "plots": 3}]}}'
+        ))
+      )
+    },
+    .package = "brapiR2"
+  )
+
+  con <- brapi_connection("https://example.org") |>
+    brapi_cache_enable(dir = tmpdir)
+  fresh <- brapi_get(con, "/locations")
+  cached <- suppressMessages(brapi_get(con, "/locations"))
+
+  expect_identical(fresh$latitude, 12.3456789)
+  expect_identical(cached, fresh)
+  # Written via a temporary file and renamed: nothing else is left behind.
+  expect_identical(list.files(tmpdir), basename(
+    brapi_cache_path(con, "/locations", list(pageSize = 1000L, page = 0L))
+  ))
+})
+
+test_that("a column that changes type keeps full numeric precision", {
+  data <- list(
+    list(plotNumber = 1L, latitude = 0.123456789),
+    list(plotNumber = "2A", latitude = 1.5)
+  )
+  res <- parse_brapi_result(data)
+  expect_identical(res$latitude, c(0.123456789, 1.5))
+})
+
+test_that("a type conflict between records doesn't change the columns", {
+  consistent <- list(
+    list(id = "1", geo = list(type = "Point")),
+    list(id = "2", geo = list(type = "Point"))
+  )
+  conflicting <- list(
+    list(id = 1L, geo = list(type = "Point")),
+    list(id = "2A", geo = list(type = "Point"))
+  )
+
+  expected_names <- names(parse_brapi_result(consistent))
+  res <- parse_brapi_result(conflicting)
+
+  expect_identical(names(res), expected_names)
+  expect_identical(res$id, c("1", "2A"))
+  expect_true(is.list(res$geo))
+  expect_identical(res$geo[[2]], list(type = "Point"))
+})
+
+test_that("a field that is a list in any record becomes a list-column", {
+  data <- list(
+    list(id = "a", synonyms = "x"),
+    list(id = "b", synonyms = list("y", "z"))
+  )
+  res <- parse_brapi_result(data)
+
+  expect_true(is.list(res$synonyms))
+  expect_identical(res$synonyms[[1]], "x")
+  expect_identical(res$synonyms[[2]], list("y", "z"))
+})
+
+test_that("brapi_get returns the same columns when types differ across pages", {
+  local_mocked_bindings(
+    req_perform = function(req) {
+      q <- httr2::url_parse(req$url)$query
+      expect_match(req$url, "/brapi/v2/observationunits\\?")
+      expect_identical(q[["pageSize"]], "1000")
+      page <- as.integer(q[["page"]])
+      unit <- list(
+        observationUnitDbId = paste0("u", page),
+        plotNumber = if (page == 0L) 1L else "2A",
+        position = list(positionCoordinateX = "1")
+      )
+      httr2::response(
+        status_code = 200L,
+        headers = list(`Content-Type` = "application/json"),
+        body = charToRaw(jsonlite::toJSON(list(
+          metadata = list(pagination = list(currentPage = page,
+                                            totalPages = 2L)),
+          result = list(data = list(unit))
+        ), auto_unbox = TRUE))
+      )
+    },
+    .package = "brapiR2"
+  )
+
+  con <- brapi_connection("https://example.org")
+  res <- brapi_get(con, "/observationunits")
+
+  expect_identical(
+    names(res), c("observationUnitDbId", "plotNumber", "position")
+  )
+  expect_identical(res$plotNumber, c("1", "2A"))
+})
+
 test_that("brapi_post_search returns data on an immediate 200 response", {
   local_mocked_bindings(
     req_perform = function(req) structure(list(), class = "httr2_response"),
@@ -246,9 +356,87 @@ test_that("brapi_post_search errors after max_polls without completing", {
   )
 })
 
-test_that("parse_brapi_result falls back to jsonlite flatten on bad records", {
-  # A record whose element is itself a data.frame will break as_tibble_row's
-  # size-1 assumption and trigger the tryCatch fallback branch.
+## A search with 6 matching records served 2 per page (3 pages). `page`
+## picks the records for one page; anything not on a real page is empty.
+search_page_body <- function(page) {
+  ids <- if (page %in% 0:2) paste0("g", 2L * page + 1:2) else character()
+  list(
+    metadata = list(pagination = list(
+      currentPage = page, pageSize = 2L, totalCount = 6L, totalPages = 3L
+    )),
+    result = list(data = lapply(ids, function(id) list(germplasmDbId = id)))
+  )
+}
+
+json_response <- function(body, status = 200L) {
+  httr2::response(
+    status_code = status,
+    headers = list(`Content-Type` = "application/json"),
+    body = charToRaw(jsonlite::toJSON(body, auto_unbox = TRUE))
+  )
+}
+
+test_that("brapi_post_search fetches every page of an immediate result", {
+  seen <- new.env(parent = emptyenv())
+  seen$bodies <- list()
+  local_mocked_bindings(
+    req_perform = function(req) {
+      expect_identical(req$method, "POST")
+      expect_match(req$url, "/brapi/v2/search/germplasm$")
+      body <- req$body$data
+      seen$bodies[[length(seen$bodies) + 1L]] <- body
+      json_response(search_page_body(body[["page"]] %||% 0L))
+    },
+    .package = "brapiR2"
+  )
+
+  con <- brapi_connection("https://example.org", page_size = 2L)
+  result <- brapi_post_search(
+    con, "/search/germplasm",
+    body = list(germplasmNames = "x")
+  )
+
+  expect_identical(result$germplasmDbId, paste0("g", 1:6))
+  expect_length(seen$bodies, 3L)
+  pages <- vapply(seen$bodies, function(b) b[["page"]] %||% 0L, numeric(1))
+  expect_identical(pages, c(0, 1, 2))
+  for (b in seen$bodies) {
+    expect_identical(b[["pageSize"]], 2L)
+    expect_identical(unclass(b[["germplasmNames"]]), "x")
+  }
+})
+
+test_that("brapi_post_search fetches every page of an async result", {
+  seen <- new.env(parent = emptyenv())
+  seen$gets <- list()
+  local_mocked_bindings(
+    req_perform = function(req) {
+      if (identical(req$method, "POST")) {
+        return(json_response(
+          list(result = list(searchResultsDbId = "sr123")), 202L
+        ))
+      }
+      expect_match(req$url, "/brapi/v2/search/germplasm/sr123\\?")
+      q <- httr2::url_parse(req$url)$query
+      seen$gets[[length(seen$gets) + 1L]] <- q
+      json_response(search_page_body(as.integer(q[["page"]] %||% 0L)))
+    },
+    .package = "brapiR2"
+  )
+
+  con <- brapi_connection("https://example.org", page_size = 2L)
+  result <- suppressMessages(brapi_post_search(
+    con, "/search/germplasm",
+    body = list(), poll_interval = 0
+  ))
+
+  expect_identical(result$germplasmDbId, paste0("g", 1:6))
+  pages <- vapply(seen$gets, function(q) q[["page"]] %||% "0", character(1))
+  expect_identical(pages, c("0", "1", "2"))
+  for (q in seen$gets) expect_identical(q[["pageSize"]], "2")
+})
+
+test_that("parse_brapi_result keeps a data.frame element as a list-column", {
   bad_data <- list(list(id = "1", nested = data.frame(x = 1:2)))
   result <- parse_brapi_result(bad_data)
 
@@ -443,11 +631,14 @@ test_that("a truncated result is not cached", {
   on.exit(unlink(dir, recursive = TRUE), add = TRUE)
 
   local_mocked_bindings(
-    req_perform = function(req) structure(list(), class = "httr2_response"),
+    req_perform = function(req) {
+      page <- httr2::url_parse(req$url)$query[["page"]]
+      structure(list(page = page), class = "httr2_response")
+    },
     resp_body_json = function(resp, ...) {
       list(
         metadata = list(pagination = list(totalPages = 5L)),
-        result = list(data = list(list(id = "1")))
+        result = list(data = list(list(id = resp$page)))
       )
     },
     .package = "brapiR2"
@@ -460,4 +651,344 @@ test_that("a truncated result is not cached", {
 
   suppressMessages(brapi_get(con, "/studies"))
   expect_length(list.files(dir), 1L)
+})
+
+## A /programs server holding 6 records, 2 per page. `pagination` builds
+## the metadata for a requested page; `honour_page = FALSE` makes the
+## server serve page 0 whatever was asked for. Records each query.
+mock_paged_server <- function(pagination, honour_page = TRUE) {
+  seen <- new.env(parent = emptyenv())
+  seen$queries <- list()
+  respond <- function(req) {
+    expect_match(req$url, "/brapi/v2/programs\\?")
+    q <- httr2::url_parse(req$url)$query
+    seen$queries[[length(seen$queries) + 1L]] <- q
+    asked <- as.integer(q[["page"]])
+    served <- if (honour_page) asked else 0L
+    ids <- paste0("p", 2L * served + 1:2)
+    body <- list(
+      metadata = list(pagination = pagination(served)),
+      result = list(data = lapply(ids, function(id) list(programDbId = id)))
+    )
+    httr2::response(
+      status_code = 200L,
+      headers = list(`Content-Type` = "application/json"),
+      body = charToRaw(jsonlite::toJSON(body, auto_unbox = TRUE))
+    )
+  }
+  list(respond = respond, queries = function() seen$queries)
+}
+
+test_that("brapi_get derives the page count from totalCount", {
+  server <- mock_paged_server(function(page) {
+    list(currentPage = page, pageSize = 2L, totalCount = 6L)
+  })
+  local_mocked_bindings(req_perform = server$respond, .package = "brapiR2")
+
+  con <- brapi_connection("https://example.org", page_size = 2L)
+  res <- brapi_get(con, "/programs")
+
+  expect_identical(res$programDbId, paste0("p", 1:6))
+  pages <- vapply(server$queries(), function(q) q[["page"]], character(1))
+  expect_identical(pages, c("0", "1", "2"))
+  for (q in server$queries()) expect_identical(q[["pageSize"]], "2")
+})
+
+test_that("brapi_get stops when a server ignores page", {
+  server <- mock_paged_server(
+    function(page) list(currentPage = page, pageSize = 2L, totalPages = 3L),
+    honour_page = FALSE
+  )
+  local_mocked_bindings(req_perform = server$respond, .package = "brapiR2")
+
+  dir <- withr::local_tempdir()
+  con <- brapi_connection("https://example.org", page_size = 2L) |>
+    brapi_cache_enable(dir = dir)
+  expect_warning(res <- brapi_get(con, "/programs"), "ignore")
+
+  expect_identical(res$programDbId, c("p1", "p2"))
+  pages <- vapply(server$queries(), function(q) q[["page"]], character(1))
+  expect_identical(pages, c("0", "1"))
+  # An incomplete result is never cached.
+  expect_length(list.files(dir), 0L)
+})
+
+test_that("brapi_get stops on a repeated page without currentPage", {
+  server <- mock_paged_server(
+    function(page) list(pageSize = 2L, totalPages = 3L),
+    honour_page = FALSE
+  )
+  local_mocked_bindings(req_perform = server$respond, .package = "brapiR2")
+
+  con <- brapi_connection("https://example.org", page_size = 2L)
+  expect_warning(res <- brapi_get(con, "/programs"), "ignore")
+  expect_identical(res$programDbId, c("p1", "p2"))
+})
+
+test_that("brapi_get validates max_pages", {
+  con <- brapi_connection("https://example.org")
+  for (bad in list(NA, 0, -1, 1.5, "2", c(1, 2), NULL)) {
+    expect_error(brapi_get(con, "/programs", max_pages = bad), "max_pages")
+  }
+})
+
+test_that("brapi_post_search derives the page count from totalCount", {
+  local_mocked_bindings(
+    req_perform = function(req) {
+      expect_match(req$url, "/brapi/v2/search/programs$")
+      page <- req$body$data[["page"]] %||% 0L
+      expect_identical(req$body$data[["pageSize"]], 2L)
+      ids <- paste0("p", 2L * page + 1:2)
+      httr2::response(
+        status_code = 200L,
+        headers = list(`Content-Type` = "application/json"),
+        body = charToRaw(jsonlite::toJSON(list(
+          metadata = list(pagination = list(
+            currentPage = page, pageSize = 2L, totalCount = 6L
+          )),
+          result = list(data = lapply(ids, function(id) {
+            list(programDbId = id)
+          }))
+        ), auto_unbox = TRUE))
+      )
+    },
+    .package = "brapiR2"
+  )
+
+  con <- brapi_connection("https://example.org", page_size = 2L)
+  res <- brapi_post_search(con, "/search/programs")
+  expect_identical(res$programDbId, paste0("p", 1:6))
+})
+
+## The JSON a request body is sent as (req_body_json() serialises it with
+## auto_unbox = TRUE).
+sent_json <- function(req) {
+  as.character(jsonlite::toJSON(req$body$data, auto_unbox = TRUE))
+}
+
+empty_result <- function() {
+  httr2::response(
+    status_code = 200L,
+    headers = list(`Content-Type` = "application/json"),
+    body = charToRaw('{"result": {"data": []}}')
+  )
+}
+
+test_that("search bodies send plural filters as arrays, the rest as scalars", {
+  seen <- new.env(parent = emptyenv())
+  local_mocked_bindings(
+    req_perform = function(req) {
+      expect_match(req$url, "/brapi/v2/search/calls$")
+      seen$json <- sent_json(req)
+      empty_result()
+    },
+    .package = "brapiR2"
+  )
+
+  con <- brapi_connection("https://example.org")
+  brapi_search_calls(
+    con,
+    variantSetDbIds = "vs1",
+    sepUnphased = "/",
+    unknownString = ".",
+    expandHomozygotes = TRUE
+  )
+
+  expect_match(seen$json, '"variantSetDbIds":["vs1"]', fixed = TRUE)
+  expect_match(seen$json, '"sepUnphased":"/"', fixed = TRUE)
+  expect_match(seen$json, '"unknownString":"."', fixed = TRUE)
+  expect_match(seen$json, '"expandHomozygotes":true', fixed = TRUE)
+})
+
+test_that("the deprecated array field studyDbId is still sent as an array", {
+  seen <- new.env(parent = emptyenv())
+  local_mocked_bindings(
+    req_perform = function(req) {
+      expect_match(req$url, "/brapi/v2/search/variables$")
+      seen$json <- sent_json(req)
+      empty_result()
+    },
+    .package = "brapiR2"
+  )
+
+  con <- brapi_connection("https://example.org")
+  brapi_search_variables(con, studyDbId = "s1", sortBy = "name")
+
+  expect_match(seen$json, '"studyDbId":["s1"]', fixed = TRUE)
+  expect_match(seen$json, '"sortBy":"name"', fixed = TRUE)
+})
+
+test_that("logical query parameters are sent as true/false", {
+  seen <- new.env(parent = emptyenv())
+  local_mocked_bindings(
+    req_perform = function(req) {
+      seen$query <- httr2::url_parse(req$url)$query
+      httr2::response(
+        status_code = 200L,
+        headers = list(`Content-Type` = "application/json"),
+        body = charToRaw(paste0(
+          '{"metadata": {"pagination": {"totalPages": 1}},',
+          ' "result": {"data": []}}'
+        ))
+      )
+    },
+    .package = "brapiR2"
+  )
+
+  con <- brapi_connection("https://example.org")
+  brapi_pedigree(con, germplasmDbId = "g1",
+                 includeParents = TRUE, includeSiblings = FALSE)
+
+  expect_identical(seen$query[["germplasmDbId"]], "g1")
+  expect_identical(seen$query[["includeParents"]], "true")
+  expect_identical(seen$query[["includeSiblings"]], "false")
+})
+
+test_that("brapi_allele_matrix sends logical parameters as true/false", {
+  seen <- new.env(parent = emptyenv())
+  local_mocked_bindings(
+    req_perform = function(req) {
+      seen$query <- httr2::url_parse(req$url)$query
+      httr2::response(
+        status_code = 200L,
+        headers = list(`Content-Type` = "application/json"),
+        body = charToRaw('{"result": {"variantDbIds": [], "callSetDbIds": []}}')
+      )
+    },
+    .package = "brapiR2"
+  )
+
+  con <- brapi_connection("https://example.org")
+  brapi_allele_matrix(con, variantSetDbId = "vs1", expandHomozygotes = TRUE)
+
+  expect_identical(seen$query[["variantSetDbId"]], "vs1")
+  expect_identical(seen$query[["expandHomozygotes"]], "true")
+})
+
+## The error paths a failed request takes, end to end through brapi_get().
+error_response <- function(status, type, body) {
+  httr2::response(
+    status_code = status,
+    headers = list(`Content-Type` = type),
+    body = charToRaw(body)
+  )
+}
+
+test_that("a 401 from a list endpoint reports the server's BrAPI message", {
+  # The Breedbase form, from #1: the reason is in metadata.status.
+  local_mocked_bindings(
+    req_perform = function(req) {
+      q <- httr2::url_parse(req$url)$query
+      expect_match(req$url, "/brapi/v2/studies\\?")
+      expect_identical(q[["page"]], "0")
+      error_response(401L, "application/json", paste0(
+        '{"metadata": {"status": [{"messageType": "ERROR", "message":',
+        ' "You must login and have permission to access this BrAPI call."}]}}'
+      ))
+    },
+    .package = "brapiR2"
+  )
+
+  err <- expect_error(
+    brapi_studies(brapi_connection("https://example.org")),
+    "HTTP 401"
+  )
+  expect_match(conditionMessage(err), "You must login")
+  expect_match(conditionMessage(err), "/studies")
+})
+
+test_that("a plain-text error body is reported, an HTML page is not", {
+  local_mocked_bindings(
+    req_perform = function(req) {
+      expect_match(req$url, "/brapi/v2/programs\\?")
+      error_response(500L, "text/plain", '"Database connection lost"')
+    },
+    .package = "brapiR2"
+  )
+  err <- expect_error(
+    brapi_programs(brapi_connection("https://example.org")),
+    "HTTP 500"
+  )
+  expect_match(conditionMessage(err), "Database connection lost")
+
+  local_mocked_bindings(
+    req_perform = function(req) {
+      error_response(502L, "text/html", "<html><body>Bad Gateway</body></html>")
+    },
+    .package = "brapiR2"
+  )
+  err <- expect_error(
+    brapi_programs(brapi_connection("https://example.org")),
+    "HTTP 502"
+  )
+  expect_no_match(conditionMessage(err), "<html>")
+})
+
+test_that("an async search that is still running is polled until it's ready", {
+  seen <- new.env(parent = emptyenv())
+  seen$gets <- 0L
+  local_mocked_bindings(
+    req_perform = function(req) {
+      if (identical(req$method, "POST")) {
+        expect_match(req$url, "/brapi/v2/search/germplasm$")
+        return(error_response(
+          202L, "application/json",
+          '{"result": {"searchResultsDbId": "sr42"}}'
+        ))
+      }
+      expect_match(req$url, "/brapi/v2/search/germplasm/sr42\\?")
+      expect_identical(httr2::url_parse(req$url)$query[["page"]], "0")
+      seen$gets <- seen$gets + 1L
+      # Still processing on the first two polls, done on the third.
+      if (seen$gets < 3L) {
+        return(error_response(
+          202L, "application/json",
+          '{"result": {"searchResultsDbId": "sr42"}}'
+        ))
+      }
+      error_response(200L, "application/json", paste0(
+        '{"metadata": {"pagination": {"totalPages": 1}},',
+        ' "result": {"data": [{"germplasmDbId": "g1"}]}}'
+      ))
+    },
+    .package = "brapiR2"
+  )
+
+  res <- suppressMessages(brapi_post_search(
+    brapi_connection("https://example.org"), "/search/germplasm",
+    body = list(), poll_interval = 0, max_polls = 5L
+  ))
+
+  expect_identical(seen$gets, 3L)
+  expect_identical(res$germplasmDbId, "g1")
+})
+
+test_that("serverinfo functions pass ... through as query parameters", {
+  seen <- new.env(parent = emptyenv())
+  seen$urls <- character()
+  local_mocked_bindings(
+    req_perform = function(req) {
+      seen$urls <- c(seen$urls, req$url)
+      httr2::response(
+        status_code = 200L,
+        headers = list(`Content-Type` = "application/json"),
+        body = charToRaw(
+          '{"result": {"calls": [{"service": "studies", "methods": ["GET"]}]}}'
+        )
+      )
+    },
+    .package = "brapiR2"
+  )
+  con <- brapi_connection("https://example.org")
+
+  info <- brapi_server_info(con, dataType = "application/json")
+  expect_identical(info$service, "studies")
+  brapi_endpoints(con, contentType = "application/json")
+  suppressMessages(brapi_ping(con, dataType = "text/csv"))
+
+  q <- lapply(seen$urls, function(u) httr2::url_parse(u)$query)
+  expect_identical(q[[1]][["dataType"]], "application/json")
+  expect_identical(q[[2]][["contentType"]], "application/json")
+  expect_identical(q[[3]][["dataType"]], "text/csv")
+  expect_true(all(grepl("/brapi/v2/serverinfo?", seen$urls, fixed = TRUE)))
 })

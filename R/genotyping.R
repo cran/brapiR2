@@ -1,6 +1,6 @@
 # ---- BrAPI Genotyping Module ----
 # Endpoints: /samples, /variants, /variantsets, /calls, /callsets,
-#            /references, /referencesets, /allelematrix, /vendor/orders
+#            /references, /referencesets, /allelematrix
 # Genome Maps (/maps, /markerpositions) lives in R/genome_maps.R instead;
 # brapi_get_marker_map() below builds on top of it.
 
@@ -246,6 +246,11 @@ brapi_reference_sets <- function(con, ...) {
 #' `dimensionVariantPage`, `dimensionVariantPageSize`,
 #' `dimensionCallSetPage`, `dimensionCallSetPageSize`.
 #'
+#' Both dimensions are paged automatically, `con$page_size` variants by
+#' `con$page_size` call sets at a time, unless a `dimension*PageSize` is
+#' given. Supplying `dimensionVariantPage` or `dimensionCallSetPage`
+#' fetches only that page of that dimension.
+#'
 #' @examples
 #' \donttest{
 #' con <- brapi_connection("https://test-server.brapi.org")
@@ -260,93 +265,127 @@ brapi_allele_matrix <- function(con, variantSetDbId = NULL, ...) {
 
   query <- list(...)
   if (!is.null(variantSetDbId)) query$variantSetDbId <- variantSetDbId
-  query$pageSize <- query$pageSize %||% con$page_size
 
-  raw <- fetch_allele_matrix_pages(con, query)
+  gt <- fetch_allele_matrix_pages(con, query)
 
-  n_v <- length(raw$variant_ids)
-  n_cs <- length(raw$callset_ids)
-
-  if (n_v == 0L || n_cs == 0L) {
+  if (nrow(gt) == 0L || ncol(gt) == 0L) {
     return(tibble())
   }
 
+  # One row per (variant, call set), all of a variant's call sets together.
   tibble(
-    variantDbId = rep(raw$variant_ids, each = n_cs),
-    callSetDbId = rep(raw$callset_ids, times = n_v),
-    genotype    = unlist(lapply(raw$gt_mat, function(row) row[seq_len(n_cs)]))
+    variantDbId = rep(rownames(gt), each = ncol(gt)),
+    callSetDbId = rep(colnames(gt), times = nrow(gt)),
+    genotype    = as.vector(t(gt))
   )
 }
 
 
 #' Internal: Page Through the Allele Matrix Endpoint
 #'
-#' Accumulates variant IDs, call set IDs, and the genotype data matrix
-#' across all `callSetPage` pages of the `/allelematrix` response.
+#' `/allelematrix` is paged in two dimensions, variants and call sets,
+#' each with its own `dimension*Page`/`dimension*PageSize` parameters and
+#' its own entry in `result$pagination`. This walks every page of both and
+#' assembles the blocks into one genotype matrix.
 #'
 #' @inheritParams brapi_shared_params
-#' @param query Named list. Query parameters, including `pageSize` and any
-#'   user-supplied filters.
+#' @param query Named list. Query parameters, including any user-supplied
+#'   filters. A `dimensionVariantPage` or `dimensionCallSetPage` already in
+#'   `query` pins that dimension to the one page.
 #'
-#' @return A list with elements `variant_ids`, `callset_ids`, and `gt_mat`
-#'   (a list where `gt_mat[[i]]` holds all genotype strings for variant `i`).
+#' @return A character matrix of genotype calls, variants in rows and call
+#'   sets in columns, with the IDs as dimnames.
 #' @keywords internal
 #' @noRd
 fetch_allele_matrix_pages <- function(con, query) {
-  cs_page <- 0L
-  cs_total_pages <- 1L
+  # `[[` rather than `$`: `$` would partially match dimensionVariantPage
+  # to dimensionVariantPageSize.
+  query[["dimensionVariantPageSize"]] <-
+    query[["dimensionVariantPageSize"]] %||% con$page_size
+  query[["dimensionCallSetPageSize"]] <-
+    query[["dimensionCallSetPageSize"]] %||% con$page_size
+  pinned_v <- query[["dimensionVariantPage"]]
+  pinned_cs <- query[["dimensionCallSetPage"]]
+  query <- brapi_query_values(query)
 
-  all_variant_ids <- character(0)
-  all_callset_ids <- character(0)
-  # gt_mat[i] will hold all genotype strings for variant i across callset pages
-  gt_mat <- list()
-
+  blocks <- list()
+  totals <- c(VARIANTS = 1L, CALLSETS = 1L)
+  v_page <- 0L
   repeat {
-    query$callSetPage <- cs_page
+    cs_page <- 0L
+    repeat {
+      query[["dimensionVariantPage"]] <- pinned_v %||% v_page
+      query[["dimensionCallSetPage"]] <- pinned_cs %||% cs_page
 
-    resp <- brapi_req(con, "/allelematrix") |>
-      req_url_query(!!!query) |>
-      req_perform()
+      resp <- brapi_req(con, "/allelematrix") |>
+        req_url_query(!!!query) |>
+        req_perform()
+      brapi_stop_for_status(resp, con, "/allelematrix")
+      body <- resp_body_json(resp, simplifyVector = FALSE)
 
-    body <- resp_body_json(resp, simplifyVector = FALSE)
-
-    # /allelematrix uses an array of pagination objects, one per dimension
-    for (p in body$result$pagination) {
-      if (identical(p$dimension, "CALLSETS")) {
-        cs_total_pages <- p$totalPages %||% 1L
-      }
-    }
-
-    cs_ids <- unlist(body$result$callSetDbIds)
-    v_ids <- unlist(body$result$variantDbIds)
-
-    if (cs_page == 0L) {
-      all_variant_ids <- v_ids
-      gt_mat <- vector("list", length(v_ids))
-    }
-    all_callset_ids <- c(all_callset_ids, cs_ids)
-
-    # Find the Genotype data matrix
-    for (dm in body$result$dataMatrices) {
-      nm <- dm$dataMatrixName %||% ""
-      ab <- dm$dataMatrixAbbreviation %||% ""
-      if (nm == "Genotype" || ab == "GT") {
-        for (i in seq_along(dm$dataMatrix)) {
-          gt_mat[[i]] <- c(gt_mat[[i]], unlist(dm$dataMatrix[[i]]))
+      for (p in body$result$pagination) {
+        if (isTRUE(p$dimension %in% names(totals))) {
+          totals[[p$dimension]] <- p$totalPages %||% 1L
         }
-        break
       }
-    }
+      blocks[[length(blocks) + 1L]] <- allele_matrix_block(body$result)
 
-    cs_page <- cs_page + 1L
-    if (cs_page >= cs_total_pages) break
+      cs_page <- cs_page + 1L
+      if (!is.null(pinned_cs) || cs_page >= totals[["CALLSETS"]]) break
+    }
+    v_page <- v_page + 1L
+    if (!is.null(pinned_v) || v_page >= totals[["VARIANTS"]]) break
   }
 
-  list(
-    variant_ids  = all_variant_ids,
-    callset_ids  = all_callset_ids,
-    gt_mat       = gt_mat
+  variant_ids <- unique(unlist(lapply(blocks, rownames)))
+  callset_ids <- unique(unlist(lapply(blocks, colnames)))
+  gt <- matrix(
+    NA_character_,
+    nrow = length(variant_ids), ncol = length(callset_ids),
+    dimnames = list(variant_ids, callset_ids)
   )
+  for (b in blocks) {
+    if (length(b) > 0L) gt[rownames(b), colnames(b)] <- b
+  }
+  gt
+}
+
+
+#' Internal: Genotype Block From One Allele Matrix Page
+#'
+#' @param result The `result` element of one `/allelematrix` response.
+#'
+#' @return A character matrix, the page's variants in rows and call sets in
+#'   columns, holding its "Genotype"/"GT" data matrix (`NA` where absent).
+#' @keywords internal
+#' @noRd
+allele_matrix_block <- function(result) {
+  v_ids <- as.character(unlist(result$variantDbIds))
+  cs_ids <- as.character(unlist(result$callSetDbIds))
+  block <- matrix(
+    NA_character_,
+    nrow = length(v_ids), ncol = length(cs_ids),
+    dimnames = list(v_ids, cs_ids)
+  )
+
+  for (dm in result$dataMatrices) {
+    nm <- dm$dataMatrixName %||% ""
+    ab <- dm$dataMatrixAbbreviation %||% ""
+    if (nm == "Genotype" || ab == "GT") {
+      rows <- seq_len(min(length(dm$dataMatrix), length(v_ids)))
+      for (i in rows) {
+        # A JSON null is a missing call. unlist() would drop it and shift
+        # every later call one call set to the left, so map cell by cell.
+        row <- vapply(dm$dataMatrix[[i]], function(cell) {
+          if (length(cell) == 0L) NA_character_ else as.character(cell[[1L]])
+        }, character(1))
+        cols <- seq_len(min(length(row), length(cs_ids)))
+        block[i, cols] <- row[cols]
+      }
+      break
+    }
+  }
+  block
 }
 
 
@@ -414,10 +453,16 @@ brapi_search_calls <- function(con, variantSetDbIds = NULL,
 #' dosage matrix (samples × markers) compatible with genomic selection
 #' packages like `rrBLUP`, `BGLR`, and `sommer`.
 #'
-#' Allele dosage is computed by splitting each genotype string on `sep` (or
-#' `"|"` for phased calls) and counting how many alleles are non-reference
-#' (i.e. not `"0"`). Missing calls (`unknown_string`, `"."`, or `""`) become
-#' `NA`.
+#' The server is asked for expanded homozygotes, `sep` as the unphased
+#' separator and `unknown_string` for missing data. Allele dosage is then
+#' computed by splitting each genotype string on `sep` (or `"|"` for phased
+#' calls) and counting how many alleles are non-reference (i.e. not `"0"`).
+#' A call with any missing allele (`unknown_string`, `"."` or `""`), such as
+#' `"./1"`, becomes `NA`. A server that still collapses a homozygote to a
+#' single allele (`"1"`) gets it expanded to the ploidy seen in the rest of
+#' the data, or to 2 if every call is collapsed. Alleles must be numeric
+#' indices (`"0"`, `"1"`, ...); nucleotide calls such as `"A/T"` are an
+#' error.
 #'
 #' @inheritParams brapi_shared_params
 #' @param variantSetDbId Character. The variant set to retrieve.
@@ -426,9 +471,13 @@ brapi_search_calls <- function(con, variantSetDbIds = NULL,
 #' @param unknown_string Character. String representing missing data.
 #'   Default `"."`.
 #'
-#' @return A numeric matrix: rows = samples (callSetDbIds), columns = markers
-#'   (variantDbIds). Values are integer dosages (0, 1, 2 for diploids; 0–N
-#'   for polyploids). Missing calls are `NA`.
+#' @return A numeric (double) matrix: rows = samples (callSetDbIds),
+#'   columns = markers (variantDbIds). Values are whole-number dosages
+#'   (0, 1, 2 for diploids; 0–N for polyploids). Missing calls are `NA`.
+#'
+#' @section BrAPI endpoint:
+#' `GET /allelematrix` - see the
+#' [v2.1 specification](https://github.com/plantbreeding/BrAPI/blob/V2.1/Specification/BrAPI-Genotyping/AlleleMatrix/AlleleMatrix_GET.yaml).
 #'
 #' @examples
 #' \donttest{
@@ -449,50 +498,95 @@ brapi_get_dosage_matrix <- function(con, variantSetDbId,
     "Fetching allele matrix for variant set {.val {variantSetDbId}}..."
   )
 
-  tidy <- brapi_allele_matrix(con, variantSetDbId = variantSetDbId)
+  validate_con(con)
+  # Variants in rows, call sets in columns.
+  gt <- fetch_allele_matrix_pages(con, list(
+    variantSetDbId = variantSetDbId,
+    expandHomozygotes = "true",
+    sepUnphased = sep,
+    unknownString = unknown_string
+  ))
 
-  if (nrow(tidy) == 0L) {
+  if (length(gt) == 0L) {
     cli_abort("No allele matrix data returned for {.val {variantSetDbId}}.")
   }
 
   cli_alert_info(
-    "Encoding {nrow(tidy)} genotype calls as allele dosages..."
+    "Encoding {length(gt)} genotype calls as allele dosages..."
   )
 
-  geno_to_dosage <- function(geno) {
-    if (is.na(geno) || geno == unknown_string ||
-          geno == "." || geno == "") {
-      return(NA_real_)
-    }
-    alleles <- strsplit(geno, sep, fixed = TRUE)[[1]]
-    # Fall back to phased separator
-    if (length(alleles) < 2L) {
-      alleles <- strsplit(geno, "|", fixed = TRUE)[[1]]
-    }
-    if (length(alleles) < 2L) {
-      return(NA_real_)
-    }
-    # Count non-reference alleles (anything other than "0")
-    sum(alleles != "0", na.rm = TRUE)
-  }
-
-  tidy$dosage <- vapply(tidy$genotype, geno_to_dosage, numeric(1L))
-
-  # Pivot to wide: rows = samples (callSets), cols = markers (variants)
-  wide <- pivot_wider(
-    tidy[, c("callSetDbId", "variantDbId", "dosage")],
-    names_from  = "variantDbId",
-    values_from = "dosage"
+  # Each distinct genotype string is decoded once, then mapped back.
+  calls <- unique(as.vector(gt))
+  dosage <- genotype_dosages(calls, sep, unknown_string)
+  mat <- matrix(
+    dosage[match(t(gt), calls)],
+    nrow = ncol(gt),
+    dimnames = list(colnames(gt), rownames(gt))
   )
-
-  sample_ids <- wide$callSetDbId
-  mat <- as.matrix(wide[, -1L, drop = FALSE])
-  rownames(mat) <- sample_ids
 
   cli_alert_success(
     "Dosage matrix ready: {nrow(mat)} samples x {ncol(mat)} markers."
   )
   mat
+}
+
+
+#' Internal: Allele Dosages for a Set of Genotype Strings
+#'
+#' @param calls Character vector of distinct genotype strings.
+#' @param sep Character. Unphased allele separator; `"|"` is also accepted.
+#' @param unknown_string Character. The server's missing-data string.
+#'
+#' @return A double vector the length of `calls`: the number of
+#'   non-reference alleles in each, or `NA` for a call with any missing
+#'   allele. A single-allele (collapsed homozygous) call is expanded to the
+#'   most common ploidy among the multi-allele calls, or 2 if there are none.
+#' @keywords internal
+#' @noRd
+genotype_dosages <- function(calls, sep, unknown_string) {
+  missing_allele <- c(unknown_string, ".", "")
+  alleles <- lapply(calls, function(call) {
+    if (is.na(call) || call %in% missing_allele) {
+      return(NULL)
+    }
+    a <- strsplit(call, sep, fixed = TRUE)[[1]]
+    if (length(a) < 2L) {
+      a <- strsplit(call, "|", fixed = TRUE)[[1]]
+    }
+    if (length(a) == 0L || any(a %in% missing_allele)) {
+      return(NULL)
+    }
+    a
+  })
+
+  present <- !vapply(alleles, is.null, logical(1))
+  bad <- calls[present][!vapply(alleles[present], function(a) {
+    all(grepl("^[0-9]+$", a))
+  }, logical(1))]
+  if (length(bad)) {
+    cli_abort(c(
+      "Genotype calls must be numeric allele indices such as {.val 0/1}.",
+      "x" = "Got {.val {utils::head(bad, 5)}}."
+    ))
+  }
+
+  n_alleles <- lengths(alleles)
+  multi <- n_alleles[n_alleles > 1L]
+  ploidy <- if (length(multi)) {
+    as.integer(names(which.max(table(multi))))
+  } else {
+    2L
+  }
+
+  vapply(alleles, function(a) {
+    if (is.null(a)) {
+      return(NA_real_)
+    }
+    if (length(a) == 1L) {
+      return(if (a == "0") 0 else as.numeric(ploidy))
+    }
+    as.numeric(sum(a != "0"))
+  }, numeric(1))
 }
 
 
@@ -528,6 +622,15 @@ brapi_get_dosage_matrix <- function(con, variantSetDbId,
 #'   row per marker-map placement, so a marker on several maps appears
 #'   more than once. `type` and `unit` are joined in from [brapi_maps()]
 #'   so a caller can tell a genetic (cM) map from a physical (bp) one.
+#'
+#' @section BrAPI endpoints:
+#' With `mapDbId`: `GET /markerpositions`. With `variantSetDbId`:
+#' `GET /variants`, then `POST /search/markerpositions`. Either way,
+#' `GET /maps` for the map metadata. See the v2.1 specification for
+#' [`/markerpositions`](https://github.com/plantbreeding/BrAPI/blob/V2.1/Specification/BrAPI-Genotyping/GenomeMaps/MarkerPositions_GET.yaml),
+#' [`/variants`](https://github.com/plantbreeding/BrAPI/blob/V2.1/Specification/BrAPI-Genotyping/Variants/Variants_GET.yaml),
+#' [`/search/markerpositions`](https://github.com/plantbreeding/BrAPI/blob/V2.1/Specification/BrAPI-Genotyping/GenomeMaps/Search_MarkerPositions_POST.yaml)
+#' and [`/maps`](https://github.com/plantbreeding/BrAPI/blob/V2.1/Specification/BrAPI-Genotyping/GenomeMaps/Maps_GET.yaml).
 #'
 #' @examples
 #' \donttest{

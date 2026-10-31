@@ -1,12 +1,11 @@
 #' @keywords internal
 "_PACKAGE"
 
-#' @importFrom rlang .data .env %||% abort inform warn
+#' @importFrom rlang .data .env %||%
 #' @importFrom tibble tibble as_tibble
-#' @importFrom dplyr bind_rows mutate select filter
-#' @importFrom purrr map map_dfr map_chr map_lgl compact
+#' @importFrom dplyr bind_rows mutate
+#' @importFrom purrr map compact
 #' @importFrom glue glue
-#' @importFrom cli cli_progress_bar cli_progress_update cli_progress_done
 #' @importFrom cli cli_alert_success cli_alert_info cli_alert_warning cli_abort
 #' @importFrom cli cli_warn
 #' @importFrom jsonlite fromJSON toJSON
@@ -14,7 +13,8 @@
 #' @importFrom httr2 req_perform req_body_json resp_body_json resp_status
 #' @importFrom httr2 resp_content_type resp_body_string req_error
 #' @importFrom httr2 req_retry req_auth_bearer_token req_method req_timeout
-#' @importFrom tidyr pivot_wider unnest
+#' @importFrom httr2 req_body_form
+#' @importFrom tidyr pivot_wider
 NULL
 
 
